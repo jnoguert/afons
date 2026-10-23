@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Afons: dades descarregades i generades
+data/raw/
+data/interim/
+data/processed/
