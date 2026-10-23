@@ -13,7 +13,7 @@ Afons creua la ubicació dels punts d'immersió de la Costa Brava (i la resta de
 ## Índex
 
 - [Objectius](#objectius)
-- [Fonts de dades](#fonts-de-dades-candidates)
+- [Fonts de dades](#fonts-de-dades)
 - [Stack](#stack)
 - [Estructura prevista](#estructura-prevista)
 - [Full de ruta](#full-de-ruta)
@@ -32,17 +32,18 @@ Fase 0: definició del projecte. Encara no hi ha codi; el primer pas és el note
 - [ ] Permetre afegir POIs propis i traces d'immersió (logs de l'ordinador de busseig).
 - [ ] Visor web senzill per consultar-ho tot des del mòbil abans de tirar-se a l'aigua.
 
-## Fonts de dades (candidates)
+## Fonts de dades
 
-| Font | Què aporta | Format / accés | Notes |
-|---|---|---|---|
-| **[ICGC – Batimetria](https://www.icgc.cat/ca/Geoinformacio-i-mapes/Dades-i-productes/Batimetria)** | Model topobatimètric de la franja litoral (malla 1 m), isòbates cada 1 m, línia de costa, ortofoto | COG GeoTIFF, WMS `geoserveis.icgc.cat/servei/catalunya/batimetria/wms` | CC BY 4.0. Cal verificar cobertura i profunditat a cada zona |
-| **ICGC – Models d'elevacions de costa** | MDT/MDS LiDAR de la franja costanera (50 cm) | GeoTIFF | Útil per a la part emergida: entrades des de costa, penya-segats |
-| **[EMODnet Bathymetry (DTM)](https://emodnet.ec.europa.eu/en/bathymetry)** | Batimetria regional de tota la Mediterrània | GeoTIFF, NetCDF, XYZ; WMS/WCS | Resolució baixa (~100 m), per al context fora de la franja ICGC |
-| **[OpenStreetMap](https://www.openstreetmap.org) / [OpenSeaMap](https://map.openseamap.org)** | Punts d'immersió, derelictes, centres de busseig, balisament | Overpass API | Tags: `sport=scuba_diving` + `scuba_diving:divespot=yes`, `scuba_diving:maxdepth`, `historic=wreck`, `seamark:type=wreck`, `amenity=dive_centre` |
-| **Catàlegs de PADI / SSI / altres** | Punts d'immersió amb descripcions | Per investigar | Probablement amb llicència restrictiva: comprovar termes abans de fer scraping o redistribuir |
-| **Espais protegits (Medes, Cap de Creus...)** | Límits de reserves i zones de regulació | Dades obertes Generalitat | Per marcar restriccions |
-| **Dades pròpies** | POIs i logs d'immersió | CSV / UDDF / FIT | Exportats de l'ordinador de busseig |
+| Font | Què aporta | Format / accés | Llicència | Estat |
+|---|---|---|---|---|
+| **[ICGC – Batimetria v2r1 2021-2025](https://www.icgc.cat/en/Geoinformation-and-Maps/Data-and-products/Elevations/Bathymetry)** | Model topobatimètric de la franja litoral (malla 1 m, de ~50 m terra endins fins a −50 m), isòbates cada 1 m, línia de costa | COG GeoTIFF (2,8 GB zip), GeoPackage, SHP a [`datacloud.icgc.cat/datacloud/batimetria/`](https://datacloud.icgc.cat/datacloud/batimetria/). [Metadades](https://catalegs.ide.cat/geonetwork/srv/cat/catalog.search#/metadata/batimetria-v2r1-2021-2025) · [Especificacions](https://datacloud.ide.cat/especificacions/batimetria-v2r1-20251124.pdf) | CC BY 4.0 | ✅ Descarregat a `data/raw/` (ràster + isòbates 2021-2025, línia de costa 2021-2024) |
+| **ICGC – Ortofoto batimètrica** | Ortofoto de costa a 5 cm (Delta de l'Ebre–el Vendrell i Llavaneres–Cap de Creus) | ECW (25 GB), GeoPackage (48 GB), [WMS](https://www.icgc.cat/en/Geoinformation-and-Maps/Online-services-Geoservices/WMS-Bathymetry) `geoserveis.icgc.cat/servei/catalunya/batimetria/wms` | CC BY 4.0 | Consultar pel WMS; no descarregar sencera |
+| **ICGC – Models d'elevacions de costa** | MDT/MDS LiDAR de la franja costanera (50 cm) | GeoTIFF | CC BY 4.0 | Pendent. Útil per a la part emergida: entrades des de costa, penya-segats |
+| **[EMODnet Bathymetry (DTM 2024)](https://emodnet.ec.europa.eu/en/bathymetry)** | Batimetria regional de tota la Mediterrània (~115 m, referida a LAT) | 59 tessel·les en GeoTIFF, NetCDF, XYZ des del [visor](https://emodnet.ec.europa.eu/geoviewer/); ERDDAP; WMS/WCS | Gratuïta amb atribució (llicència exacta per verificar) | Pendent. Només per al context més enllà de −50 m |
+| **[OpenStreetMap](https://www.openstreetmap.org) / [OpenSeaMap](https://map.openseamap.org)** | Punts d'immersió, derelictes, centres de busseig, balisament | Overpass API. Tags: `sport=scuba_diving`, `scuba_diving:divespot=yes`, `scuba_diving:maxdepth`, `historic=wreck`, `seamark:type=wreck`, `amenity=dive_centre` | ODbL (atribució + compartir igual les bases derivades) | Pendent |
+| **Espais protegits (Medes, Cap de Creus...)** | Límits d'ENPE, PEIN i Xarxa Natura 2000 | ArcGIS REST de la Diputació de Barcelona ([ENPE](https://gissrv.diba.cat/arcgis/rest/services/SITXELL/ENPE/MapServer), [PEIN/XN2000/ENPE](https://gissrv.diba.cat/arcgis/rest/services/SITXELL/PEIN_XN2000_ENPE/MapServer)), exportable a GeoJSON | © Generalitat de Catalunya | Pendent. Els límits legals són els dels decrets |
+| **Catàlegs de PADI / SSI / altres** | Punts d'immersió amb descripcions | Web | Contingut de tercers, sense llicència oberta | Només com a referència per contrastar a mà. No fer scraping ni redistribuir |
+| **Dades pròpies** | POIs i logs d'immersió | CSV / UDDF / FIT, exportats de l'ordinador de busseig | Pròpia | Pendent |
 
 ## Stack
 
