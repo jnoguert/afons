@@ -51,6 +51,13 @@
   .card:hover { background:#1b3550; }
   .card span { color:var(--muted); font-size:13px; }
   #fitxa { font-size:12px; color:var(--muted); margin:0; }
+  .badge { display:inline-block; background:var(--line); color:var(--fg); border-radius:10px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:8px 0; }
+  button.on { background:var(--acc); color:#000; }
+  #habLegend { left:auto; right:8px; top:auto; bottom:8px; display:grid; gap:2px; }
+  #habLegend[hidden] { display:none; }
+  .sw { display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  #pois div { display:flex; justify-content:space-between; gap:6px; padding:2px 0; border-bottom:1px dotted var(--line); }
   @media (max-width: 900px) {
     main { grid-template-columns:1fr; grid-template-rows:none; height:auto; }
     #side { grid-row:auto; }
@@ -73,19 +80,25 @@
     <p><button id="undo">Desfés l'últim</button> <button id="clear">Esborra-ho tot</button></p>
     <h2>Rutes</h2>
     <select id="rutes"></select>
-    <p><button id="rload">Carrega</button> <button id="rdel">Esborra</button> <button id="rexp" title="Descarrega les teves rutes en JSON">Exporta</button></p>
+    <p><button id="rload">Carrega</button> <button id="rdel">Esborra</button> <button id="rexp" title="Descarrega les teves rutes i punts d'interès en JSON">Exporta</button></p>
     <p><button id="rsave">Desa la ruta actual</button> <label><input type="checkbox" id="rrec"> com a recomanada</label></p>
+    <h2>Punts d'interès</h2>
+    <p><select id="poiTipus"><option>Derelicte</option><option>Escultura / objecte</option><option>Cova</option><option>Agulla / roca</option><option>Praderia</option><option>Altre</option></select>
+      <button id="poiAdd">＋ Marca'n un</button></p>
+    <p id="poiHint" class="muted" hidden>Clica al plànol on és el punt d'interès.</p>
+    <div id="pois" class="muted"></div>
     <h2>Resum</h2>
     <div id="summary" class="muted">Afegeix punts al plànol.</div>
     <h2>Vista</h2>
     <label class="f"><span>Exageració vertical 3D</span><input type="number" id="exag" value="1.5" min="1" max="5" step="0.5"><span>×</span></label>
     <label class="f"><span>Tint de batimetria</span><input type="checkbox" id="tint" checked><span></span></label>
+    <label class="f"><span>Tipus de fons (posidònia, sorra, roca…)</span><input type="checkbox" id="habOn"><span></span></label>
     <footer>
       <p><b>Eina orientativa.</b> No calcula descompressió ni límits de no-descompressió, i la batimetria pot tenir errors o buits. No substitueix l'ordinador, la taula, el briefing ni el sentit comú.</p>
       <p id="attrib"></p>
     </footer>
   </aside>
-  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol · roda o +/− per fer zoom, arrossega per moure't</span><span id="zoom"><button data-z="1.5" title="Apropa">+</button><button data-z="0.667" title="Allunya">−</button><button data-z="0" title="Vista sencera">⟲</button></span><span class="tag" id="hover"></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
+  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol · roda o +/− per fer zoom, arrossega per moure't</span><span id="zoom"><button data-z="1.5" title="Apropa">+</button><button data-z="0.667" title="Allunya">−</button><button data-z="0" title="Vista sencera">⟲</button></span><span class="tag" id="hover"></span><span class="tag" id="habLegend" hidden></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
   <section class="pane" id="pane3d"><span class="tag">3D · arrossega per girar, roda per zoom</span></section>
   <section class="pane" id="profilePane">
     <canvas id="profile"></canvas>
@@ -124,11 +137,23 @@ const zones = [...new Set(SITES.map(s => s.zone))];
 $('sitesel').innerHTML = '<option value="">Tria una immersió…</option>' + zones.map(z => `<optgroup label="${esc(z)}">` +
   SITES.filter(s => s.zone === z).map(s => `<option value="${s.slug}"${s === entry ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + '</optgroup>').join('');
 $('sitesel').onchange = e => { location.search = e.target.value ? `?site=${e.target.value}` : ''; };
+const ACCES = { costa: 'Des de costa', vaixell: 'Des de vaixell' };
+const badges = s => s.acces.map(a => `<span class="badge">${ACCES[a]}</span>`).join('') + `<span class="badge">${esc(s.nivell)}</span>`;
 if (!entry) {
   $('hint').hidden = true;
-  document.querySelector('main').outerHTML = '<div id="home">' + zones.map(z => `<h2>${esc(z)}</h2><div class="cards">` +
-    SITES.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}</span>` +
-      (s.rutes.length ? `<span>★ ${s.rutes.length} ${s.rutes.length > 1 ? 'rutes recomanades' : 'ruta recomanada'}</span>` : '') + '</a>').join('') + '</div>').join('') + '</div>';
+  document.querySelector('main').outerHTML = '<div id="home"><div class="chips" id="filters"></div><div id="list"></div></div>';
+  const filt = { acces: '', nivell: '' }, nivells = [...new Set(SITES.map(s => s.nivell))];
+  const chips = (k, vals, label) => vals.map(v => `<button data-k="${k}" data-v="${v}" class="${filt[k] === v ? 'on' : ''}">${esc(label(v))}</button>`).join('');
+  const renderHome = () => {
+    $('filters').innerHTML = chips('acces', Object.keys(ACCES), v => ACCES[v]) + '<span class="muted">·</span>' + chips('nivell', nivells, v => v);
+    const ok = SITES.filter(s => (!filt.acces || s.acces.includes(filt.acces)) && (!filt.nivell || s.nivell === filt.nivell));
+    $('list').innerHTML = zones.filter(z => ok.some(s => s.zone === z)).map(z => `<h2>${esc(z)}</h2><div class="cards">` +
+      ok.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}</span><div>${badges(s)}</div>` +
+        (s.rutes.length ? `<span>★ ${s.rutes.length} ${s.rutes.length > 1 ? 'rutes recomanades' : 'ruta recomanada'}</span>` : '') + '</a>').join('') + '</div>').join('')
+      || '<p class="muted">Cap immersió amb aquests filtres.</p>';
+  };
+  $('filters').onclick = e => { const { k, v } = e.target.dataset; if (!k) return; filt[k] = filt[k] === v ? '' : v; renderHome(); };
+  renderHome();
 } else {
   const loader = document.createElement('script');
   loader.src = `sites/${entry.slug}/site.js`;
@@ -140,7 +165,7 @@ if (!entry) {
 async function init(site) {
   document.title = `Afons · ${entry.name}`;
   $('title').textContent = `${entry.name} · ${entry.zone}`;
-  $('fitxa').textContent = `${entry.tipus}. ${entry.font}`;
+  $('fitxa').innerHTML = `${badges(entry)}<br>${esc(entry.tipus)}. ${esc(entry.font)}`;
   $('attrib').textContent = site.attribution;
   const bin = atob(site.elev), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -174,7 +199,7 @@ async function init(site) {
   function drawBase() {
     const g = base.getContext('2d');
     g.drawImage(ortho, 0, 0, base.width, base.height);
-    if (!$('tint').checked) { isoLabels = []; texCanvas.getContext('2d').drawImage(base, 0, 0); return; }
+    if (!$('tint').checked) { isoLabels = []; return; }
     const im = g.getImageData(0, 0, base.width, base.height), px = im.data, bw = base.width;
     const band = new Int16Array(bw * base.height).fill(-1); // franja d'1 m de cada píxel
     const LBL = 140, labels = [];
@@ -193,14 +218,37 @@ async function init(site) {
     }
     g.putImageData(im, 0, 0);
     isoLabels = labels;
-    // la textura 3D porta les etiquetes incrustades; al plànol es dibuixen a mida fixa (drawPlan)
-    const tg = texCanvas.getContext('2d'); tg.drawImage(base, 0, 0); drawLabels(tg, labels);
   }
   const drawLabels = (g, pts) => { g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
     pts.forEach(([a, b, v]) => { g.strokeText(`${v}`, a, b); g.fillText(`${v}`, a, b); }); };
   let isoLabels = [];
-  const texCanvas = document.createElement('canvas'); texCanvas.width = base.width; texCanvas.height = base.height;
   drawBase();
+
+  // --- capa de tipus de fons (Mapa dels hàbitats marins, Generalitat) ---
+  const HABCOL = { 'Posidònia': '#1f9d55', 'Mata morta de posidònia': '#8a7d3c', 'Altres fanerògames': '#7cc35b', 'Coral·ligen': '#e0457b',
+    'Roca': '#8c5a3c', 'Còdols i graves': '#b59f7b', 'Detrític': '#d6b98c', 'Sorra': '#f4dc8d', 'Fang': '#9b8b78', 'Antròpic': '#8a8a8a', 'Altres': '#c9c9c9' };
+  const classes = site.habClasses || [], habBin = atob(site.hab || ''), hab = new Uint8Array(habBin.length);
+  for (let i = 0; i < habBin.length; i++) hab[i] = habBin.charCodeAt(i);
+  const habAt = (x, y) => { const c = Math.floor((x - site.xmin) / site.res), r = Math.floor((site.ymax - y) / site.res);
+    return classes[hab[r * site.w + c] - 1]; };
+  const habCanvas = document.createElement('canvas'); habCanvas.width = site.w; habCanvas.height = site.h;
+  if (hab.length) { const hg = habCanvas.getContext('2d'), im = hg.createImageData(site.w, site.h);
+    for (let i = 0; i < hab.length; i++) { const k = classes[hab[i] - 1]; if (!k) continue;
+      const col = HABCOL[k.cat] || HABCOL.Altres; im.data.set([parseInt(col.slice(1, 3), 16), parseInt(col.slice(3, 5), 16), parseInt(col.slice(5, 7), 16), 165], i * 4); }
+    hg.putImageData(im, 0, 0); }
+  const cats = [...new Set(classes.map(c => c.cat))];
+  $('habLegend').innerHTML = cats.map(c => `<span><i class="sw" style="background:${HABCOL[c] || HABCOL.Altres}"></i>${esc(c)}</span>`).join('') || 'Sense dades d\'hàbitats';
+  const habOn = () => $('habOn').checked;
+  const drawHab = (g, x, y, w, h) => { if (!habOn()) return; g.imageSmoothingEnabled = false; g.drawImage(habCanvas, x, y, w, h); g.imageSmoothingEnabled = true; };
+  // la textura 3D porta hàbitats i etiquetes incrustats; al plànol es dibuixen a mida fixa (drawPlan)
+  const texCanvas = document.createElement('canvas'); texCanvas.width = base.width; texCanvas.height = base.height;
+  let tex = null; // textura 3D (es crea més avall)
+  function composeTex() {
+    const tg = texCanvas.getContext('2d'); tg.drawImage(base, 0, 0); drawHab(tg, 0, 0, base.width, base.height); drawLabels(tg, isoLabels);
+    if (tex) tex.needsUpdate = true;
+  }
+  composeTex();
+  $('habOn').onchange = () => { $('habLegend').hidden = !habOn(); composeTex(); drawPlan(); };
 
   // --- plànol interactiu ---
   const plan = $('plan'); plan.width = base.width; plan.height = base.height;
@@ -227,7 +275,9 @@ async function init(site) {
   });
   plan.addEventListener('pointermove', e => {
     const [px, py] = evPx(e), [x, y] = scrToUtm(px, py);
-    $('hover').textContent = isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m` : 'Terra';
+    const h = habAt(x, y), p = nearPoi(px, py);
+    $('hover').textContent = p ? `${p.nom} · ${p.tipus}${p.nota ? ` — ${p.nota}` : ''}` :
+      isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m${h ? ` · ${h.cat} (${h.nom.replace(/^\d+ - /, '')})` : ''}` : 'Terra';
     if (drag >= 0) { const w = state.wps[drag]; w.x = x; w.y = y; if (w.auto) w.depth = autoDepth(x, y); update(); }
     else if (pan) {
       pan.moved = pan.moved || Math.hypot(px - pan.px, py - pan.py) > cssPx(6);
@@ -235,15 +285,22 @@ async function init(site) {
     }
   });
   plan.addEventListener('pointerup', () => {
-    if (pan && !pan.moved) { const [x, y] = scrToUtm(pan.px, pan.py); state.wps.push({ x, y, depth: autoDepth(x, y), auto: true }); update(); }
+    if (pan && !pan.moved) {
+      const [x, y] = scrToUtm(pan.px, pan.py);
+      if (poiMode) addPoi(x, y);
+      else { state.wps.push({ x, y, depth: autoDepth(x, y), auto: true }); update(); }
+    }
     drag = -1; pan = null; save();
   });
   plan.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...evPx(e)); }, { passive: false });
   $('zoom').onclick = e => { const f = e.target.dataset.z; if (f !== undefined) zoomAt(+f, plan.width / 2, plan.height / 2); };
-  plan.addEventListener('contextmenu', e => { e.preventDefault(); const i = near(...evPx(e)); if (i >= 0) { state.wps.splice(i, 1); update(); } });
+  plan.addEventListener('contextmenu', e => { e.preventDefault();
+    const i = near(...evPx(e)), p = nearPoi(...evPx(e));
+    if (i >= 0) { state.wps.splice(i, 1); update(); }
+    else if (p && !p.projecte && confirm(`Esborrar el punt d'interès «${p.nom}»?`)) { myPois.splice(myPois.indexOf(p), 1); savePois(); } });
   $('undo').onclick = () => { state.wps.pop(); update(); };
   $('clear').onclick = () => { state.wps = []; update(); };
-  $('tint').onchange = () => { drawBase(); tex.needsUpdate = true; update(); };
+  $('tint').onchange = () => { drawBase(); composeTex(); update(); };
 
   $('wps').addEventListener('input', e => { const i = +e.target.dataset.i, v = parseFloat(e.target.value);
     if (v >= 0) { state.wps[i].depth = v; state.wps[i].auto = false; update(false); } });
@@ -278,8 +335,31 @@ async function init(site) {
     if (r.projecte) return alert('Aquesta ruta és del projecte: es treu editant sites/index.js.');
     if (confirm(`Esborrar «${r.nom}»?`)) { mine.splice(mine.indexOf(r), 1); saveMine(); } };
   $('rexp').onclick = () => { const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify({ slug, rutes: mine }, null, 1)], { type: 'application/json' }));
-    a.download = `afons-rutes-${slug}.json`; a.click(); };
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ slug, rutes: mine, pois: myPois }, null, 1)], { type: 'application/json' }));
+    a.download = `afons-${slug}.json`; a.click(); };
+
+  // --- punts d'interès: els del projecte (AFONS_POIS) i els teus (en aquest navegador, comuns a totes les immersions) ---
+  const PKEY = 'afons:pois';
+  let myPois = []; try { myPois = JSON.parse(localStorage.getItem(PKEY)) || []; } catch (e) {}
+  const inSite = p => p.x >= site.xmin && p.x <= site.xmin + W && p.y <= site.ymax && p.y >= site.ymax - H;
+  let pois = [];
+  function refreshPois() {
+    pois = [...(window.AFONS_POIS || []).map(p => ({ ...p, projecte: true })), ...myPois].filter(inSite);
+    $('pois').innerHTML = pois.map((p, i) => `<div><span>◆ ${esc(p.nom)} <span class="auto">${esc(p.tipus)} · ${depthAt(p.x, p.y).toFixed(0)} m</span></span>` +
+      (p.projecte ? '<span class="auto">projecte</span>' : `<button data-i="${i}" title="Esborra">✕</button>`) + '</div>').join('') || 'Cap punt d\'interès en aquesta zona.';
+    drawPois3D(); drawPlan();
+  }
+  const savePois = () => { try { localStorage.setItem(PKEY, JSON.stringify(myPois)); } catch (e) {} refreshPois(); };
+  const nearPoi = (px, py) => pois.find(p => { const [a, b] = toScr(p.x, p.y); return Math.hypot(a - px, b - py) < cssPx(12); });
+  let poiMode = false;
+  $('poiAdd').onclick = () => { poiMode = !poiMode; $('poiHint').hidden = !poiMode; $('poiAdd').classList.toggle('on', poiMode); };
+  function addPoi(x, y) {
+    poiMode = false; $('poiHint').hidden = true;
+    const nom = prompt(`Nom del punt d'interès (${$('poiTipus').value}):`); if (!nom) return;
+    myPois.push({ nom, tipus: $('poiTipus').value, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, data: new Date().toISOString().slice(0, 10) });
+    savePois();
+  }
+  $('pois').onclick = e => { const p = pois[e.target.dataset.i]; if (p && confirm(`Esborrar «${p.nom}»?`)) { myPois.splice(myPois.indexOf(p), 1); savePois(); } };
 
   // --- 3D ---
   const pane3d = $('pane3d');
@@ -302,12 +382,31 @@ async function init(site) {
   for (let i = 0; i < idx.length; i += 3)
     if (Number.isFinite(elev[idx[i]]) && Number.isFinite(elev[idx[i + 1]]) && Number.isFinite(elev[idx[i + 2]])) keep.push(idx[i], idx[i + 1], idx[i + 2]);
   geo.setIndex(keep);
-  const tex = new THREE.CanvasTexture(texCanvas); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex = new THREE.CanvasTexture(texCanvas); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })));
   const water = new THREE.Mesh(new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0x3fa7d6, transparent: true, opacity: 0.15, depthWrite: false, side: THREE.DoubleSide }));
   scene.add(water);
   const route = new THREE.Group(); scene.add(route);
+  const poiGroup = new THREE.Group(); scene.add(poiGroup);
+  function label3D(text) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 96; const g = c.getContext('2d');
+    g.font = 'bold 44px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8; g.strokeStyle = '#0d1b2a';
+    g.strokeText(text, 256, 48); g.fillStyle = '#ff9df0'; g.fillText(text, 256, 48);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false })); s.scale.set(80, 15, 1); return s;
+  }
+  function drawPois3D() {
+    poiGroup.children.forEach(o => { if (o.material.map) o.material.map.dispose(); o.material.dispose(); if (!o.isSprite) o.geometry.dispose(); });
+    poiGroup.clear();
+    pois.forEach(p => {
+      const bot = -depthAt(p.x, p.y) * exag;
+      poiGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([to3(p.x, p.y, bot), to3(p.x, p.y, 10)]), new THREE.LineBasicMaterial({ color: 0xff4fd8 })));
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(2.5), new THREE.MeshBasicMaterial({ color: 0xff4fd8 }));
+      m.position.copy(to3(p.x, p.y, bot + 2)); poiGroup.add(m);
+      const s = label3D(p.nom); s.position.copy(to3(p.x, p.y, 18)); poiGroup.add(s);
+    });
+  }
   const diver = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb703 }));
   scene.add(diver);
   let exag = 0;
@@ -317,7 +416,7 @@ async function init(site) {
     for (let i = 0; i < pos.count; i++) pos.setY(i, filled[i] * exag);
     pos.needsUpdate = true; geo.computeVertexNormals();
   }
-  $('exag').oninput = () => { setRelief(); update(false); };
+  $('exag').oninput = () => { setRelief(); drawPois3D(); update(false); };
   new ResizeObserver(() => { const w = pane3d.clientWidth, h = pane3d.clientHeight;
     renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }).observe(pane3d);
   (function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
@@ -404,7 +503,13 @@ async function init(site) {
     const S = last.samples;
     pg.fillStyle = '#0d1b2a'; pg.fillRect(0, 0, plan.width, plan.height);
     pg.drawImage(base, view.tx, view.ty, base.width * view.z, base.height * view.z);
+    drawHab(pg, view.tx, view.ty, base.width * view.z, base.height * view.z);
     drawLabels(pg, isoLabels.map(([qx, py, v]) => [qx * view.z + view.tx, py * view.z + view.ty, v]));
+    pois.forEach(p => { const [a, b] = toScr(p.x, p.y); // rombe + nom
+      pg.save(); pg.translate(a, b); pg.rotate(Math.PI / 4); pg.fillStyle = '#ff4fd8'; pg.strokeStyle = '#fff'; pg.lineWidth = 2;
+      pg.fillRect(-7, -7, 14, 14); pg.strokeRect(-7, -7, 14, 14); pg.restore();
+      pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.textBaseline = 'middle'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
+      pg.strokeText(p.nom, a + 12, b - 12); pg.fillStyle = '#ff9df0'; pg.fillText(p.nom, a + 12, b - 12); });
     if (S.length) {
       const split = last.summary.reserveAt ? S.indexOf(last.summary.reserveAt) : S.length;
       pg.lineWidth = 4; pg.lineJoin = 'round';
@@ -435,6 +540,7 @@ async function init(site) {
   };
 
   update();
+  refreshPois();
 }
 </script>
 </body>

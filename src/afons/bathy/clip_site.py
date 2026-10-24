@@ -14,11 +14,56 @@ from pathlib import Path
 
 import numpy as np
 import tifffile
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[3]
 TIF = ROOT / "data/raw/Batimetria-ICGC-v2r1-2021-2025/batimetria-v2r1-elevacions-2021-2025.tif"
 NODATA = -9999
 ORTO_WMS = "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms"
+HAB_WFS = "https://sig.gencat.cat/ows/HABITATS/wfs"  # Mapa dels hàbitats marins de Catalunya, CC0
+# categoria simplificada per paraula clau del nom LPRE (l'ordre importa: el primer que coincideix)
+CATS = [("mata morta", "Mata morta de posidònia"), ("posidonia", "Posidònia"), ("cymodocea", "Altres fanerògames"),
+        ("zostera", "Altres fanerògames"), ("coral", "Coral·ligen"), ("portu", "Antròpic"), ("espigon", "Antròpic"),
+        ("antròp", "Antròpic"), ("roca", "Roca"), ("còdol", "Còdols i graves"), ("maërl", "Detrític"),
+        ("detrític", "Detrític"), ("fangs i fangs", "Fang"), ("sorr", "Sorra"), ("fang", "Fang")]
+
+
+def categoria(nom):
+    n = nom.lower()
+    return next((c for k, c in CATS if k in n), "Altres")
+
+
+assert categoria("30403 - Fangs i fangs sorrencs infralitorals i circalitorals") == "Fang"
+assert categoria("30402 - Sorres i sorres fangoses infralitorals i circalitorals") == "Sorra"
+assert categoria("70201 - Fangs i sorres fangoses portuàries") == "Antròpic"
+assert categoria("3051203 - Alguers de mata morta de Posidonia oceanica") == "Mata morta de posidònia"
+
+
+def wfs(layer, xmin, ymin, xmax, ymax):
+    q = {"SERVICE": "WFS", "VERSION": "2.0.0", "REQUEST": "GetFeature", "TYPENAMES": f"HABITATS:{layer}",
+         "OUTPUTFORMAT": "application/json", "COUNT": 20000,
+         "BBOX": f"{xmin},{ymin},{xmax},{ymax},urn:ogc:def:crs:EPSG::25831"}
+    req = urllib.request.Request(f"{HAB_WFS}?{urllib.parse.urlencode(q)}", headers={"User-Agent": "QGIS/34000 (afons)"})
+    with urllib.request.urlopen(req, timeout=180) as r:  # sig.gencat.cat rebutja UAs de curl/python
+        return json.load(r)["features"]
+
+
+def habitats(xmin, ymax, size, res, w, h):
+    """Rasteritza els polígons d'hàbitat a la graella del retall: (índexs Uint8, classes)."""
+    grid, names = Image.new("L", (w, h), 0), []
+    for f in wfs("HABITATS_HABITATS_MARINS", xmin, ymax - size, xmin + size, ymax):
+        nom = f["properties"].get("CAT_LLEG") or "?"
+        if nom not in names:
+            names.append(nom)
+        g = f["geometry"]
+        for poly in g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]:
+            mask = Image.new("1", (w, h), 0)
+            draw = ImageDraw.Draw(mask)
+            for k, ring in enumerate(poly):  # anell exterior 1, forats 0
+                draw.polygon([((x - xmin) / res, (ymax - y) / res) for x, y, *_ in ring], fill=0 if k else 1)
+            grid.paste(names.index(nom) + 1, mask=mask)
+    assert len(names) < 255
+    return grid.tobytes(), [{"nom": n, "cat": categoria(n)} for n in names]
 
 
 def read_window(path, col0, row0, w, h):
@@ -74,12 +119,16 @@ def main(slug, name, x, y, half=500, step=2):
             raise RuntimeError(f"WMS no ha retornat imatge: {r.read(300)!r}")
         ortho = r.read()
 
+    hab, classes = habitats(xmin, ymax, size, step, elev.shape[1], elev.shape[0])
+    print(f"   hàbitats: {', '.join(sorted({c['cat'] for c in classes}))}")
+
     # NaN (terra fora de la franja) -> null via NaN en Float32; el visor ho tracta com a terra
     site = {"slug": slug, "name": name, "center": [x, y], "xmin": xmin, "ymax": ymax, "res": step,
             "w": elev.shape[1], "h": elev.shape[0],
             "elev": base64.b64encode(elev.tobytes()).decode(),  # Float32 little-endian, files de nord a sud
             "ortho": "data:image/jpeg;base64," + base64.b64encode(ortho).decode(),
-            "attribution": "Batimetria i ortofoto © Institut Cartogràfic i Geològic de Catalunya (ICGC), CC BY 4.0"}
+            "hab": base64.b64encode(hab).decode(), "habClasses": classes,  # Uint8: 0 = sense dades, i = habClasses[i-1]
+            "attribution": "Batimetria i ortofoto © ICGC, CC BY 4.0 · Hàbitats marins © Generalitat de Catalunya, CC0"}
     out = SITES / slug / "site.js"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("window.AFONS_SITE = " + json.dumps(site, ensure_ascii=False) + ";\n", encoding="utf-8")
@@ -91,7 +140,7 @@ SITES = ROOT / "web/sites"
 
 def catalog():
     src = (SITES / "index.js").read_text(encoding="utf-8")
-    return json.loads(src[src.index("["):src.rindex("]") + 1])  # el catàleg és JSON estricte
+    return json.loads(src[src.index("["):src.index("];") + 1])  # AFONS_SITES és JSON estricte
 
 
 if __name__ == "__main__":

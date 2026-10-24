@@ -24,7 +24,9 @@ Afons creua la ubicació dels punts d'immersió de la Costa Brava (i la resta de
 Primer prototip del **planificador d'immersions**: **<https://jnoguert.github.io/afons/>**. Es publica a GitHub Pages a cada commit a `main`.
 
 - Tries la immersió per zones, marques el recorregut al plànol (ortofoto i isòbates cada 1 m) i veus el 3D, el perfil i l'aire que et quedarà a l'ampolla segons el teu CAS i l'ampolla.
-- Es poden desar rutes al navegador (també com a "recomanades") i exportar-les en JSON. Les rutes del projecte són a `web/sites/index.js`.
+- Capa activable de tipus de fons (posidònia, coral·ligen, roca, sorra, fang…) al plànol i al 3D, del *Mapa dels hàbitats marins de Catalunya* (Generalitat, CC0).
+- Filtres per accés (costa/vaixell) i nivell.
+- Es poden desar rutes (també com a "recomanades") i marcar punts d'interès al navegador, i exportar-ho tot en JSON. Les rutes i els punts d'interès del projecte són a `web/sites/index.js`.
 - Per afegir una immersió: afegeix-la a `web/sites/index.js` (UTM 31N) i executa `python src/afons/bathy/clip_site.py`. El script necessita `numpy` i `tifffile` i la batimetria de l'ICGC a `data/raw/`.
 - En local: `python -m http.server 8000` des de l'arrel i obre <http://localhost:8000/web/>.
 - Tests del càlcul: `node web/plan.test.js`.
