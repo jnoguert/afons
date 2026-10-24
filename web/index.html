@@ -19,6 +19,8 @@
   #profile { flex:1; width:100%; min-height:0; }
   .tag { position:absolute; left:8px; top:8px; background:#0d1b2acc; padding:3px 8px; border-radius:6px; font-size:12px; pointer-events:none; }
   #hover { top:auto; bottom:8px; }
+  #zoom { position:absolute; left:8px; top:38px; display:flex; flex-direction:column; gap:4px; }
+  #zoom button { width:32px; height:32px; font-size:18px; padding:0; background:#0d1b2acc; }
   #legend { left:auto; right:8px; display:flex; flex-direction:column; gap:2px; }
   #legend div { height:10px; width:110px; background:linear-gradient(90deg,#aaf0ff,#46bee6,#1e78c8,#144696,#0a1e50); border-radius:3px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px; }
@@ -83,7 +85,7 @@
       <p id="attrib"></p>
     </footer>
   </aside>
-  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol</span><span class="tag" id="hover"></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
+  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol · roda o +/− per fer zoom, arrossega per moure't</span><span id="zoom"><button data-z="1.5" title="Apropa">+</button><button data-z="0.667" title="Allunya">−</button><button data-z="0" title="Vista sencera">⟲</button></span><span class="tag" id="hover"></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
   <section class="pane" id="pane3d"><span class="tag">3D · arrossega per girar, roda per zoom</span></section>
   <section class="pane" id="profilePane">
     <canvas id="profile"></canvas>
@@ -172,7 +174,7 @@ async function init(site) {
   function drawBase() {
     const g = base.getContext('2d');
     g.drawImage(ortho, 0, 0, base.width, base.height);
-    if (!$('tint').checked) return;
+    if (!$('tint').checked) { isoLabels = []; texCanvas.getContext('2d').drawImage(base, 0, 0); return; }
     const im = g.getImageData(0, 0, base.width, base.height), px = im.data, bw = base.width;
     const band = new Int16Array(bw * base.height).fill(-1); // franja d'1 m de cada píxel
     const LBL = 140, labels = [];
@@ -190,34 +192,54 @@ async function init(site) {
         labels.push([qx, py, (Math.max(b, l, u) / 5 | 0) * 5]); // etiquetes separades almenys LBL px
     }
     g.putImageData(im, 0, 0);
-    g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
-    labels.forEach(([qx, py, v]) => { g.strokeText(`${v}`, qx, py); g.fillText(`${v}`, qx, py); });
+    isoLabels = labels;
+    // la textura 3D porta les etiquetes incrustades; al plànol es dibuixen a mida fixa (drawPlan)
+    const tg = texCanvas.getContext('2d'); tg.drawImage(base, 0, 0); drawLabels(tg, labels);
   }
+  const drawLabels = (g, pts) => { g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
+    pts.forEach(([a, b, v]) => { g.strokeText(`${v}`, a, b); g.fillText(`${v}`, a, b); }); };
+  let isoLabels = [];
+  const texCanvas = document.createElement('canvas'); texCanvas.width = base.width; texCanvas.height = base.height;
   drawBase();
 
   // --- plànol interactiu ---
   const plan = $('plan'); plan.width = base.width; plan.height = base.height;
   const pg = plan.getContext('2d');
   const evPx = e => { const r = plan.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * plan.width, (e.clientY - r.top) / r.height * plan.height]; };
+  const cssPx = n => n * plan.width / plan.getBoundingClientRect().width; // n píxels de pantalla en píxels del canvas
+  // vista: píxel del canvas = píxel del plànol base * z + t
+  const view = { z: 1, tx: 0, ty: 0 };
+  const toScr = (x, y) => { const [a, b] = toPx(x, y); return [a * view.z + view.tx, b * view.z + view.ty]; };
+  const scrToUtm = (px, py) => fromPx((px - view.tx) / view.z, (py - view.ty) / view.z);
+  const clampView = () => { view.tx = Math.min(0, Math.max(plan.width * (1 - view.z), view.tx)); view.ty = Math.min(0, Math.max(plan.height * (1 - view.z), view.ty)); };
+  function zoomAt(f, px, py) {
+    const z = f ? Math.min(8, Math.max(1, view.z * f)) : 1; f = z / view.z;
+    view.tx = px - (px - view.tx) * f; view.ty = py - (py - view.ty) * f; view.z = z; clampView(); drawPlan();
+  }
   const autoDepth = (x, y) => Math.round(Math.max(0, depthAt(x, y) - state.opts.offset) * 2) / 2;
-  const near = (px, py) => { const r = plan.getBoundingClientRect(), tol = 14 * plan.width / r.width;
-    return state.wps.findIndex(w => { const [a, b] = toPx(w.x, w.y); return Math.hypot(a - px, b - py) < tol; }); };
-  let drag = -1;
+  const near = (px, py) => state.wps.findIndex(w => { const [a, b] = toScr(w.x, w.y); return Math.hypot(a - px, b - py) < cssPx(14); });
+  let drag = -1, pan = null;
   plan.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const [px, py] = evPx(e), i = near(px, py);
-    if (i >= 0) drag = i;
-    else { const [x, y] = fromPx(px, py); state.wps.push({ x, y, depth: autoDepth(x, y), auto: true }); drag = state.wps.length - 1; update(); }
+    if (i >= 0) drag = i; else pan = { px, py, tx: view.tx, ty: view.ty, moved: false };
     plan.setPointerCapture(e.pointerId);
   });
   plan.addEventListener('pointermove', e => {
-    const [px, py] = evPx(e), [x, y] = fromPx(px, py);
+    const [px, py] = evPx(e), [x, y] = scrToUtm(px, py);
     $('hover').textContent = isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m` : 'Terra';
-    if (drag < 0) return;
-    const w = state.wps[drag]; w.x = x; w.y = y; if (w.auto) w.depth = autoDepth(x, y);
-    update();
+    if (drag >= 0) { const w = state.wps[drag]; w.x = x; w.y = y; if (w.auto) w.depth = autoDepth(x, y); update(); }
+    else if (pan) {
+      pan.moved = pan.moved || Math.hypot(px - pan.px, py - pan.py) > cssPx(6);
+      if (pan.moved) { view.tx = pan.tx + px - pan.px; view.ty = pan.ty + py - pan.py; clampView(); drawPlan(); }
+    }
   });
-  plan.addEventListener('pointerup', () => { drag = -1; save(); });
+  plan.addEventListener('pointerup', () => {
+    if (pan && !pan.moved) { const [x, y] = scrToUtm(pan.px, pan.py); state.wps.push({ x, y, depth: autoDepth(x, y), auto: true }); update(); }
+    drag = -1; pan = null; save();
+  });
+  plan.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...evPx(e)); }, { passive: false });
+  $('zoom').onclick = e => { const f = e.target.dataset.z; if (f !== undefined) zoomAt(+f, plan.width / 2, plan.height / 2); };
   plan.addEventListener('contextmenu', e => { e.preventDefault(); const i = near(...evPx(e)); if (i >= 0) { state.wps.splice(i, 1); update(); } });
   $('undo').onclick = () => { state.wps.pop(); update(); };
   $('clear').onclick = () => { state.wps = []; update(); };
@@ -280,7 +302,7 @@ async function init(site) {
   for (let i = 0; i < idx.length; i += 3)
     if (Number.isFinite(elev[idx[i]]) && Number.isFinite(elev[idx[i + 1]]) && Number.isFinite(elev[idx[i + 2]])) keep.push(idx[i], idx[i + 1], idx[i + 2]);
   geo.setIndex(keep);
-  const tex = new THREE.CanvasTexture(base); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const tex = new THREE.CanvasTexture(texCanvas); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })));
   const water = new THREE.Mesh(new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0x3fa7d6, transparent: true, opacity: 0.15, depthWrite: false, side: THREE.DoubleSide }));
@@ -369,31 +391,37 @@ async function init(site) {
   function setTime(t) {
     const S = last.samples;
     curSample = S.length ? sampleAt(S, t) : null;
-    // plànol
-    pg.drawImage(base, 0, 0);
+    drawPlan();
+    diver.visible = !!curSample;
+    if (curSample) {
+      diver.position.copy(to3(curSample.x, curSample.y, -curSample.depth * exag + 1));
+      $('now').textContent = `min ${t.toFixed(1)} · ${curSample.depth.toFixed(1)} m · ${Math.max(0, curSample.p).toFixed(0)} bar · ${curSample.dist.toFixed(0)} m`;
+    } else $('now').textContent = '';
+    drawProfile(last, curSample);
+  }
+
+  function drawPlan() {
+    const S = last.samples;
+    pg.fillStyle = '#0d1b2a'; pg.fillRect(0, 0, plan.width, plan.height);
+    pg.drawImage(base, view.tx, view.ty, base.width * view.z, base.height * view.z);
+    drawLabels(pg, isoLabels.map(([qx, py, v]) => [qx * view.z + view.tx, py * view.z + view.ty, v]));
     if (S.length) {
       const split = last.summary.reserveAt ? S.indexOf(last.summary.reserveAt) : S.length;
       pg.lineWidth = 4; pg.lineJoin = 'round';
       [[0, split + 1, '#ffb703'], [split, S.length, '#ff5d5d']].forEach(([a, b, c]) => {
         if (b - a < 2) return; pg.strokeStyle = c; pg.beginPath();
-        S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toPx(s.x, s.y))); pg.stroke(); });
+        S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toScr(s.x, s.y))); pg.stroke(); });
     }
-    state.wps.forEach((w, i) => { const [a, b] = toPx(w.x, w.y);
+    state.wps.forEach((w, i) => { const [a, b] = toScr(w.x, w.y);
       pg.fillStyle = '#0d1b2a'; pg.strokeStyle = '#fff'; pg.lineWidth = 2; pg.beginPath(); pg.arc(a, b, 11, 0, 7); pg.fill(); pg.stroke();
       pg.fillStyle = '#fff'; pg.font = 'bold 13px system-ui'; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.fillText(i + 1, a, b + 1);
       const lbl = `${w.depth} m · fons ${depthAt(w.x, w.y).toFixed(1)}`; // profunditat on has clicat
       pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
       pg.strokeText(lbl, a + 15, b); pg.fillStyle = '#ffb703'; pg.fillText(lbl, a + 15, b); });
-    // escala de 100 m
-    pg.fillStyle = '#fff'; pg.fillRect(20, plan.height - 30, 100 / site.res * SC, 4); pg.textAlign = 'left'; pg.font = '13px system-ui'; pg.fillText('100 m', 20, plan.height - 40);
-    diver.visible = !!curSample;
-    if (curSample) {
-      const [a, b] = toPx(curSample.x, curSample.y);
-      pg.fillStyle = '#ffb703'; pg.beginPath(); pg.arc(a, b, 7, 0, 7); pg.fill();
-      diver.position.copy(to3(curSample.x, curSample.y, -curSample.depth * exag + 1));
-      $('now').textContent = `min ${t.toFixed(1)} · ${curSample.depth.toFixed(1)} m · ${Math.max(0, curSample.p).toFixed(0)} bar · ${curSample.dist.toFixed(0)} m`;
-    } else $('now').textContent = '';
-    drawProfile(last, curSample);
+    // escala gràfica que s'adapta al zoom
+    const mpx = SC / site.res * view.z, len = [200, 100, 50, 20, 10, 5].find(m => m * mpx <= 220) || 5;
+    pg.fillStyle = '#fff'; pg.fillRect(20, plan.height - 30, len * mpx, 4); pg.textAlign = 'left'; pg.font = '13px system-ui'; pg.fillText(`${len} m`, 20, plan.height - 40);
+    if (curSample) { const [a, b] = toScr(curSample.x, curSample.y); pg.fillStyle = '#ffb703'; pg.beginPath(); pg.arc(a, b, 7, 0, 7); pg.fill(); }
   }
   $('time').oninput = e => setTime(+e.target.value);
   let playing = false;
