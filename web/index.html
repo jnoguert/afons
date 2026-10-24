@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Afons · Planificador d'immersió</title>
+<style>
+  :root { --bg:#0d1b2a; --panel:#13263a; --line:#24405c; --fg:#e6eef5; --muted:#8fa6bb; --acc:#ffb703; --warn:#ff5d5d; --ok:#57cc99; --air:#fb8500; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:8px 16px; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  small, .muted { color:var(--muted); }
+  main { display:grid; grid-template-columns:290px 1fr 1fr; grid-template-rows:minmax(0,1fr) 240px; gap:8px; padding:0 8px 8px; height:calc(100vh - 40px); }
+  #side { grid-row:1/3; background:var(--panel); border-radius:8px; padding:12px; overflow:auto; }
+  .pane { background:var(--panel); border-radius:8px; position:relative; overflow:hidden; min-height:0; display:flex; align-items:center; justify-content:center; }
+  #plan { height:100%; max-width:100%; aspect-ratio:1/1; display:block; cursor:crosshair; touch-action:none; }
+  #profilePane { grid-column:2/4; flex-direction:column; align-items:stretch; padding:6px 10px; }
+  #profile { flex:1; width:100%; min-height:0; }
+  .tag { position:absolute; left:8px; top:8px; background:#0d1b2acc; padding:3px 8px; border-radius:6px; font-size:12px; pointer-events:none; }
+  #hover { top:auto; bottom:8px; }
+  #legend { left:auto; right:8px; display:flex; flex-direction:column; gap:2px; }
+  #legend div { height:10px; width:110px; background:linear-gradient(90deg,#aaf0ff,#46bee6,#1e78c8,#144696,#0a1e50); border-radius:3px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px; }
+  h2:first-child { margin-top:0; }
+  label.f { display:grid; grid-template-columns:1fr 70px 44px; align-items:center; gap:6px; margin:3px 0; }
+  input[type=number] { width:100%; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:3px 5px; font:inherit; }
+  button { background:var(--line); color:var(--fg); border:0; border-radius:4px; padding:4px 9px; font:inherit; cursor:pointer; }
+  button:hover { background:#2f5376; }
+  table { width:100%; border-collapse:collapse; }
+  td { padding:2px 3px; border-bottom:1px solid var(--line); }
+  td input { width:62px; }
+  .auto { color:var(--muted); font-size:12px; }
+  #summary div { display:flex; justify-content:space-between; padding:2px 0; border-bottom:1px dotted var(--line); }
+  #summary b { font-variant-numeric:tabular-nums; }
+  .warn { color:var(--warn); font-weight:600; margin-top:6px; }
+  .okmsg { color:var(--ok); margin-top:6px; }
+  #playbar { display:flex; gap:8px; align-items:center; }
+  #playbar input { flex:1; }
+  #now { font-variant-numeric:tabular-nums; min-width:220px; text-align:right; }
+  footer { font-size:11px; color:var(--muted); margin-top:14px; }
+  header a { color:var(--fg); text-decoration:none; }
+  select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:4px 6px; font:inherit; }
+  #side select { width:100%; }
+  #home { padding:4px 16px 24px; max-width:1100px; }
+  #home h2 { font-size:15px; margin:18px 0 8px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
+  .card { background:var(--panel); padding:14px; border-radius:8px; color:var(--fg); text-decoration:none; display:flex; flex-direction:column; gap:4px; }
+  .card:hover { background:#1b3550; }
+  .card span { color:var(--muted); font-size:13px; }
+  #fitxa { font-size:12px; color:var(--muted); margin:0; }
+  @media (max-width: 900px) {
+    main { grid-template-columns:1fr; grid-template-rows:none; height:auto; }
+    #side { grid-row:auto; }
+    .pane { height:70vh; }
+    #profilePane { grid-column:auto; height:280px; }
+  }
+</style>
+</head>
+<body>
+<header><a href="./"><h1>🤿 Afons</h1></a><select id="sitesel"></select><small id="hint">Clica al plànol per afegir punts · arrossega'ls per moure'ls · clic dret per esborrar-ne un</small></header>
+<main>
+  <aside id="side">
+    <h2 id="title">Immersió</h2>
+    <p id="fitxa"></p>
+    <h2>Equip i consum</h2>
+    <div id="opts"></div>
+    <label class="f"><span>Parada de seguretat (3 min a 5 m)</span><input type="checkbox" id="stop" checked><span></span></label>
+    <h2>Recorregut</h2>
+    <table id="wps"></table>
+    <p><button id="undo">Desfés l'últim</button> <button id="clear">Esborra-ho tot</button></p>
+    <h2>Rutes</h2>
+    <select id="rutes"></select>
+    <p><button id="rload">Carrega</button> <button id="rdel">Esborra</button> <button id="rexp" title="Descarrega les teves rutes en JSON">Exporta</button></p>
+    <p><button id="rsave">Desa la ruta actual</button> <label><input type="checkbox" id="rrec"> com a recomanada</label></p>
+    <h2>Resum</h2>
+    <div id="summary" class="muted">Afegeix punts al plànol.</div>
+    <h2>Vista</h2>
+    <label class="f"><span>Exageració vertical 3D</span><input type="number" id="exag" value="1.5" min="1" max="5" step="0.5"><span>×</span></label>
+    <label class="f"><span>Tint de batimetria</span><input type="checkbox" id="tint" checked><span></span></label>
+    <footer>
+      <p><b>Eina orientativa.</b> No calcula descompressió ni límits de no-descompressió, i la batimetria pot tenir errors o buits. No substitueix l'ordinador, la taula, el briefing ni el sentit comú.</p>
+      <p id="attrib"></p>
+    </footer>
+  </aside>
+  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol</span><span class="tag" id="hover"></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
+  <section class="pane" id="pane3d"><span class="tag">3D · arrossega per girar, roda per zoom</span></section>
+  <section class="pane" id="profilePane">
+    <canvas id="profile"></canvas>
+    <div id="playbar"><button id="play">▶</button><input type="range" id="time" min="0" max="1" step="0.05" value="0"><span id="now"></span></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="plan.js"></script>
+<script src="sites/index.js"></script>
+<script>
+const OPTS = [ // clau, etiqueta, unitat, valor per defecte, pas
+  ['sac', 'Consum en superfície (CAS)', 'L/min', 20, 1],
+  ['vol', 'Volum de l\'ampolla', 'L', 15, 1],
+  ['p0', 'Pressió inicial', 'bar', 200, 5],
+  ['reserve', 'Reserva', 'bar', 50, 5],
+  ['speed', 'Velocitat de natació', 'm/min', 10, 1],
+  ['offset', 'Distància al fons', 'm', 1, 0.5],
+  ['descRate', 'Velocitat de descens', 'm/min', 18, 1],
+  ['ascRate', 'Velocitat d\'ascens', 'm/min', 9, 1],
+];
+const SC = 2; // píxels del plànol per cel·la de la graella
+const $ = id => document.getElementById(id);
+
+const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const fail = err => { const p = document.createElement('pre'); p.style.cssText = 'position:fixed;bottom:0;left:0;right:0;margin:0;padding:8px;background:#5c1a1a;color:#fff;white-space:pre-wrap;z-index:9';
+  p.textContent = `Error: ${err && (err.stack || err.message) || err}`; document.body.appendChild(p); };
+window.addEventListener('error', e => fail(e.error || e.message));
+
+// --- catàleg: menú per zones ---
+const SITES = window.AFONS_SITES || [];
+const slug = new URLSearchParams(location.search).get('site');
+const entry = SITES.find(s => s.slug === slug);
+const zones = [...new Set(SITES.map(s => s.zone))];
+$('sitesel').innerHTML = '<option value="">Tria una immersió…</option>' + zones.map(z => `<optgroup label="${esc(z)}">` +
+  SITES.filter(s => s.zone === z).map(s => `<option value="${s.slug}"${s === entry ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + '</optgroup>').join('');
+$('sitesel').onchange = e => { location.search = e.target.value ? `?site=${e.target.value}` : ''; };
+if (!entry) {
+  $('hint').hidden = true;
+  document.querySelector('main').outerHTML = '<div id="home">' + zones.map(z => `<h2>${esc(z)}</h2><div class="cards">` +
+    SITES.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}</span>` +
+      (s.rutes.length ? `<span>★ ${s.rutes.length} ${s.rutes.length > 1 ? 'rutes recomanades' : 'ruta recomanada'}</span>` : '') + '</a>').join('') + '</div>').join('') + '</div>';
+} else {
+  const loader = document.createElement('script');
+  loader.src = `sites/${entry.slug}/site.js`;
+  loader.onload = () => init(window.AFONS_SITE).catch(fail);
+  loader.onerror = () => { document.querySelector('main').innerHTML = `<p style="padding:16px">No trobo <code>${loader.src}</code>. Genera'l amb <code>python src/afons/bathy/clip_site.py ${entry.slug}</code>.</p>`; };
+  document.head.appendChild(loader);
+}
+
+async function init(site) {
+  document.title = `Afons · ${entry.name}`;
+  $('title').textContent = `${entry.name} · ${entry.zone}`;
+  $('fitxa').textContent = `${entry.tipus}. ${entry.font}`;
+  $('attrib').textContent = site.attribution;
+  const bin = atob(site.elev), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const elev = new Float32Array(bytes.buffer);
+  const depthAt = makeDepthAt(site, elev);
+  const W = site.w * site.res, H = site.h * site.res;
+  const toPx = (x, y) => [(x - site.xmin) / site.res * SC, (site.ymax - y) / site.res * SC];
+  const fromPx = (px, py) => [site.xmin + px / SC * site.res, site.ymax - py / SC * site.res];
+  const isWater = (x, y) => { const c = Math.floor((x - site.xmin) / site.res), r = Math.floor((site.ymax - y) / site.res);
+    return elev[r * site.w + c] < 0; };
+
+  // --- estat (desat al navegador per punt d'immersió) ---
+  const KEY = `afons:${slug}`;
+  let state = { wps: [], opts: Object.fromEntries(OPTS.map(o => [o[0], o[3]])), stop: true };
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.wps) state = { ...state, ...s, opts: { ...state.opts, ...s.opts } }; } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+  $('opts').innerHTML = OPTS.map(([k, l, u, , st]) =>
+    `<label class="f"><span>${l}</span><input type="number" data-k="${k}" value="${state.opts[k]}" step="${st}" min="0"><span class="muted">${u}</span></label>`).join('');
+  $('opts').addEventListener('input', e => { const v = parseFloat(e.target.value); if (v > 0 || (e.target.dataset.k === 'offset' && v >= 0)) { state.opts[e.target.dataset.k] = v; update(); } });
+  $('stop').checked = state.stop;
+  $('stop').onchange = () => { state.stop = $('stop').checked; update(); };
+
+  // --- plànol base: ortofoto + tint de profunditat + isòbates ---
+  const ortho = new Image(); ortho.src = site.ortho; await ortho.decode();
+  const base = document.createElement('canvas'); base.width = site.w * SC; base.height = site.h * SC;
+  const STOPS = [[0, [170, 240, 255]], [10, [70, 190, 230]], [20, [30, 120, 200]], [30, [20, 70, 150]], [45, [10, 30, 80]]];
+  const ramp = d => { for (let i = 1; i < STOPS.length; i++) if (d <= STOPS[i][0] || i === STOPS.length - 1) {
+    const [d0, c0] = STOPS[i - 1], [d1, c1] = STOPS[i], f = Math.min(1, Math.max(0, (d - d0) / (d1 - d0)));
+    return c0.map((v, j) => v + (c1[j] - v) * f); } };
+  function drawBase() {
+    const g = base.getContext('2d');
+    g.drawImage(ortho, 0, 0, base.width, base.height);
+    if (!$('tint').checked) return;
+    const im = g.getImageData(0, 0, base.width, base.height), px = im.data, bw = base.width;
+    const band = new Int16Array(bw * base.height).fill(-1); // franja d'1 m de cada píxel
+    const LBL = 140, labels = [];
+    for (let py = 0; py < base.height; py++) for (let qx = 0; qx < bw; qx++) {
+      const [x, y] = fromPx(qx + 0.5, py + 0.5);
+      if (!isWater(x, y)) continue;
+      const d = depthAt(x, y), i = py * bw + qx, b = band[i] = Math.floor(d);
+      const l = qx ? band[i - 1] : -1, u = py ? band[i - bw] : -1;
+      const minor = (l >= 0 && l !== b) || (u >= 0 && u !== b);
+      const major = minor && ((l >= 0 && (l / 5 | 0) !== (b / 5 | 0)) || (u >= 0 && (u / 5 | 0) !== (b / 5 | 0)));
+      const blank = px[i * 4] > 235 && px[i * 4 + 1] > 235 && px[i * 4 + 2] > 235; // fora de l'ortofoto (WMS en blanc)
+      const c = minor ? [255, 255, 255] : ramp(d), a = major ? 0.9 : minor ? 0.3 : blank ? 1 : 0.5;
+      for (let j = 0; j < 3; j++) px[i * 4 + j] = px[i * 4 + j] * (1 - a) + c[j] * a;
+      if (major && qx > 20 && py > 20 && labels.every(([lx, ly]) => Math.abs(lx - qx) + Math.abs(ly - py) > LBL))
+        labels.push([qx, py, (Math.max(b, l, u) / 5 | 0) * 5]); // etiquetes separades almenys LBL px
+    }
+    g.putImageData(im, 0, 0);
+    g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
+    labels.forEach(([qx, py, v]) => { g.strokeText(`${v}`, qx, py); g.fillText(`${v}`, qx, py); });
+  }
+  drawBase();
+
+  // --- plànol interactiu ---
+  const plan = $('plan'); plan.width = base.width; plan.height = base.height;
+  const pg = plan.getContext('2d');
+  const evPx = e => { const r = plan.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * plan.width, (e.clientY - r.top) / r.height * plan.height]; };
+  const autoDepth = (x, y) => Math.round(Math.max(0, depthAt(x, y) - state.opts.offset) * 2) / 2;
+  const near = (px, py) => { const r = plan.getBoundingClientRect(), tol = 14 * plan.width / r.width;
+    return state.wps.findIndex(w => { const [a, b] = toPx(w.x, w.y); return Math.hypot(a - px, b - py) < tol; }); };
+  let drag = -1;
+  plan.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const [px, py] = evPx(e), i = near(px, py);
+    if (i >= 0) drag = i;
+    else { const [x, y] = fromPx(px, py); state.wps.push({ x, y, depth: autoDepth(x, y), auto: true }); drag = state.wps.length - 1; update(); }
+    plan.setPointerCapture(e.pointerId);
+  });
+  plan.addEventListener('pointermove', e => {
+    const [px, py] = evPx(e), [x, y] = fromPx(px, py);
+    $('hover').textContent = isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m` : 'Terra';
+    if (drag < 0) return;
+    const w = state.wps[drag]; w.x = x; w.y = y; if (w.auto) w.depth = autoDepth(x, y);
+    update();
+  });
+  plan.addEventListener('pointerup', () => { drag = -1; save(); });
+  plan.addEventListener('contextmenu', e => { e.preventDefault(); const i = near(...evPx(e)); if (i >= 0) { state.wps.splice(i, 1); update(); } });
+  $('undo').onclick = () => { state.wps.pop(); update(); };
+  $('clear').onclick = () => { state.wps = []; update(); };
+  $('tint').onchange = () => { drawBase(); tex.needsUpdate = true; update(); };
+
+  $('wps').addEventListener('input', e => { const i = +e.target.dataset.i, v = parseFloat(e.target.value);
+    if (v >= 0) { state.wps[i].depth = v; state.wps[i].auto = false; update(false); } });
+  $('wps').addEventListener('click', e => { const i = +e.target.dataset.i;
+    if (e.target.dataset.a === 'del') state.wps.splice(i, 1);
+    else if (e.target.dataset.a === 'auto') { const w = state.wps[i]; w.auto = true; w.depth = autoDepth(w.x, w.y); }
+    else return;
+    update(); });
+
+  // --- rutes: les del projecte (sites/index.js) i les teves (desades en aquest navegador) ---
+  const RKEY = `afons:rutes:${slug}`;
+  let mine = []; try { mine = JSON.parse(localStorage.getItem(RKEY)) || []; } catch (e) {}
+  let shown = [];
+  function drawRoutes() {
+    shown = [...(entry.rutes || []).map(r => ({ ...r, recomanada: true, projecte: true })), ...mine]
+      .sort((a, b) => (b.recomanada ? 1 : 0) - (a.recomanada ? 1 : 0));
+    $('rutes').innerHTML = shown.length ? shown.map((r, i) =>
+      `<option value="${i}">${r.recomanada ? '★ ' : ''}${esc(r.nom)}${r.projecte ? ' (projecte)' : ''}</option>`).join('') : '<option value="">Cap ruta desada</option>';
+  }
+  const saveMine = () => { try { localStorage.setItem(RKEY, JSON.stringify(mine)); } catch (e) {} drawRoutes(); };
+  drawRoutes();
+  $('rload').onclick = () => { const r = shown[$('rutes').value]; if (!r) return;
+    state.wps = r.punts.map(([x, y, depth, auto]) => ({ x, y, depth: auto ? autoDepth(x, y) : depth, auto: !!auto })); update(); };
+  $('rsave').onclick = () => {
+    if (!state.wps.length) return alert('Primer marca la ruta al plànol.');
+    const nom = prompt('Nom de la ruta:'); if (!nom) return;
+    mine.push({ nom, recomanada: $('rrec').checked, data: new Date().toISOString().slice(0, 10),
+      punts: state.wps.map(w => [Math.round(w.x * 10) / 10, Math.round(w.y * 10) / 10, w.depth, w.auto ? 1 : 0]) });
+    saveMine();
+  };
+  $('rdel').onclick = () => { const r = shown[$('rutes').value]; if (!r) return;
+    if (r.projecte) return alert('Aquesta ruta és del projecte: es treu editant sites/index.js.');
+    if (confirm(`Esborrar «${r.nom}»?`)) { mine.splice(mine.indexOf(r), 1); saveMine(); } };
+  $('rexp').onclick = () => { const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ slug, rutes: mine }, null, 1)], { type: 'application/json' }));
+    a.download = `afons-rutes-${slug}.json`; a.click(); };
+
+  // --- 3D ---
+  const pane3d = $('pane3d');
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  pane3d.appendChild(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0d1b2a);
+  const camera = new THREE.PerspectiveCamera(50, 1, 1, 20000);
+  camera.position.set(W * 0.35, W * 0.5, H * 0.75);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, -15, 0);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(-400, 600, -300); scene.add(sun);
+  const to3 = (x, y, z) => new THREE.Vector3(x - (site.xmin + W / 2), z, (site.ymax - H / 2) - y);
+
+  const geo = new THREE.PlaneGeometry((site.w - 1) * site.res, (site.h - 1) * site.res, site.w - 1, site.h - 1);
+  geo.rotateX(-Math.PI / 2);
+  // fora de la franja batimètrica (NaN) no hi ha dades: no es dibuixen aquells triangles
+  const filled = elev.map(v => (Number.isFinite(v) ? v : 0)), idx = geo.index.array, keep = [];
+  for (let i = 0; i < idx.length; i += 3)
+    if (Number.isFinite(elev[idx[i]]) && Number.isFinite(elev[idx[i + 1]]) && Number.isFinite(elev[idx[i + 2]])) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+  geo.setIndex(keep);
+  const tex = new THREE.CanvasTexture(base); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })));
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x3fa7d6, transparent: true, opacity: 0.15, depthWrite: false, side: THREE.DoubleSide }));
+  scene.add(water);
+  const route = new THREE.Group(); scene.add(route);
+  const diver = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb703 }));
+  scene.add(diver);
+  let exag = 0;
+  function setRelief() {
+    const e = parseFloat($('exag').value) || 1; if (e === exag) return; exag = e;
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, filled[i] * exag);
+    pos.needsUpdate = true; geo.computeVertexNormals();
+  }
+  $('exag').oninput = () => { setRelief(); update(false); };
+  new ResizeObserver(() => { const w = pane3d.clientWidth, h = pane3d.clientHeight;
+    renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }).observe(pane3d);
+  (function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); })();
+
+  // --- perfil ---
+  let last = { samples: [], summary: null }, curSample = null;
+  const prof = $('profile');
+  function drawProfile(res, cur) {
+    const dpr = devicePixelRatio || 1, cw = prof.clientWidth, ch = prof.clientHeight;
+    prof.width = cw * dpr; prof.height = ch * dpr;
+    const g = prof.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cw, ch);
+    const S = res.samples; if (S.length < 2) return;
+    const o = state.opts, L = 40, R = 46, T = 10, B = 22, pw = cw - L - R, ph = ch - T - B;
+    const tMax = res.summary.time, dMax = Math.ceil((Math.max(...S.map(s => Math.max(s.bottom, s.depth))) + 2) / 5) * 5;
+    const X = t => L + t / tMax * pw, Y = d => T + d / dMax * ph, P = p => T + (1 - Math.max(0, p) / o.p0) * ph;
+    g.font = '11px system-ui'; g.fillStyle = '#8fa6bb'; g.strokeStyle = '#24405c'; g.lineWidth = 1;
+    for (let d = 0; d <= dMax; d += 5) { g.beginPath(); g.moveTo(L, Y(d)); g.lineTo(L + pw, Y(d)); g.stroke(); g.fillText(`${d} m`, 4, Y(d) + 4); }
+    const tStep = tMax > 60 ? 10 : 5;
+    for (let t = 0; t <= tMax; t += tStep) g.fillText(`${t}'`, X(t) - 6, ch - 6);
+    for (let p = 0; p <= o.p0; p += 50) g.fillText(`${p}`, L + pw + 6, P(p) + 4);
+    g.fillText('bar', L + pw + 6, T + ph + 16);
+    g.fillStyle = '#5c4a3a'; g.beginPath(); g.moveTo(X(0), Y(dMax)); // fons sota el recorregut
+    S.forEach(s => g.lineTo(X(s.t), Y(s.bottom))); g.lineTo(X(tMax), Y(dMax)); g.fill();
+    g.setLineDash([4, 4]); g.strokeStyle = '#ff5d5d'; g.beginPath(); g.moveTo(L, P(o.reserve)); g.lineTo(L + pw, P(o.reserve)); g.stroke(); g.setLineDash([]);
+    const line = (f, color) => { g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); S.forEach((s, i) => (i ? g.lineTo : g.moveTo).call(g, X(s.t), f(s))); g.stroke(); };
+    line(s => Y(s.depth), '#8ecae6');
+    line(s => P(s.p), '#fb8500');
+    if (cur) { g.strokeStyle = '#ffb703'; g.lineWidth = 1; g.beginPath(); g.moveTo(X(cur.t), T); g.lineTo(X(cur.t), T + ph); g.stroke(); }
+    g.fillStyle = '#8ecae6'; g.fillText('profunditat', L + 6, T + ph - 6); g.fillStyle = '#fb8500'; g.fillText('aire a l\'ampolla', L + 80, T + ph - 6);
+  }
+  new ResizeObserver(() => drawProfile(last, curSample)).observe(prof);
+
+  // --- recàlcul i dibuix ---
+  function update(redrawList = true) {
+    setRelief();
+    const o = { ...state.opts, step: 2, stopDepth: 5, stopTime: state.stop ? 3 : 0, stopMinDepth: 10 };
+    last = planDive(state.wps, o, depthAt);
+    const S = last.samples, sum = last.summary;
+    if (redrawList) $('wps').innerHTML = state.wps.length ? '<tr class="muted"><td>#</td><td>Prof. (m)</td><td>Fons</td><td></td></tr>' + state.wps.map((w, i) =>
+      `<tr><td>${i + 1}</td><td><input type="number" step="0.5" min="0" data-i="${i}" value="${w.depth}"></td>` +
+      `<td class="auto">${depthAt(w.x, w.y).toFixed(1)}${w.auto ? '' : ` <button data-a="auto" data-i="${i}" title="Torna a seguir el fons">auto</button>`}</td>` +
+      `<td><button data-a="del" data-i="${i}" title="Esborra">✕</button></td></tr>`).join('') : '<tr><td class="muted">Cap punt encara.</td></tr>';
+    $('summary').innerHTML = !sum ? 'Afegeix punts al plànol.' : [
+      ['Durada total', `${sum.time.toFixed(0)} min`], ['Distància', `${sum.dist.toFixed(0)} m`],
+      ['Profunditat màxima', `${sum.maxDepth.toFixed(1)} m`], ['Profunditat mitjana', `${sum.avgDepth.toFixed(1)} m`],
+      ['Aire consumit', `${sum.gas.toFixed(0)} L`], ['Pressió en sortir', `${Math.max(0, sum.endP).toFixed(0)} bar`],
+    ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('') +
+      (sum.endP <= 0 ? `<div class="warn">Et quedes sense aire al minut ${S.find(s => s.p <= 0).t.toFixed(0)}.</div>` :
+       sum.reserveAt ? `<div class="warn">Arribes a la reserva (${state.opts.reserve} bar) al minut ${sum.reserveAt.t.toFixed(0)}, a ${sum.reserveAt.dist.toFixed(0)} m de recorregut.</div>` :
+       `<div class="okmsg">Surts amb ${(sum.endP - state.opts.reserve).toFixed(0)} bar per sobre de la reserva.</div>`) +
+      (sum.maxDepth > 40 ? '<div class="warn">Supera els 40 m.</div>' : '');
+
+    // ruta 3D
+    route.clear();
+    if (S.length > 1) {
+      const pts = S.map(s => to3(s.x, s.y, -s.depth * exag + 0.4));
+      const split = sum.reserveAt ? S.indexOf(sum.reserveAt) + 1 : S.length;
+      route.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.slice(0, split)), new THREE.LineBasicMaterial({ color: 0xffb703 })));
+      if (split < S.length) route.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.slice(split - 1)), new THREE.LineBasicMaterial({ color: 0xff5d5d })));
+      route.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(S.map(s => to3(s.x, s.y, -s.bottom * exag + 0.2))), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 })));
+    }
+    state.wps.forEach(w => { const m = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      m.position.copy(to3(w.x, w.y, -Math.min(w.depth, depthAt(w.x, w.y)) * exag)); route.add(m); });
+
+    const tr = $('time'); tr.max = sum ? sum.time.toFixed(2) : 1;
+    if (+tr.value > +tr.max) tr.value = tr.max;
+    setTime(+tr.value);
+    save();
+  }
+
+  function setTime(t) {
+    const S = last.samples;
+    curSample = S.length ? sampleAt(S, t) : null;
+    // plànol
+    pg.drawImage(base, 0, 0);
+    if (S.length) {
+      const split = last.summary.reserveAt ? S.indexOf(last.summary.reserveAt) : S.length;
+      pg.lineWidth = 4; pg.lineJoin = 'round';
+      [[0, split + 1, '#ffb703'], [split, S.length, '#ff5d5d']].forEach(([a, b, c]) => {
+        if (b - a < 2) return; pg.strokeStyle = c; pg.beginPath();
+        S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toPx(s.x, s.y))); pg.stroke(); });
+    }
+    state.wps.forEach((w, i) => { const [a, b] = toPx(w.x, w.y);
+      pg.fillStyle = '#0d1b2a'; pg.strokeStyle = '#fff'; pg.lineWidth = 2; pg.beginPath(); pg.arc(a, b, 11, 0, 7); pg.fill(); pg.stroke();
+      pg.fillStyle = '#fff'; pg.font = 'bold 13px system-ui'; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.fillText(i + 1, a, b + 1);
+      const lbl = `${w.depth} m · fons ${depthAt(w.x, w.y).toFixed(1)}`; // profunditat on has clicat
+      pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
+      pg.strokeText(lbl, a + 15, b); pg.fillStyle = '#ffb703'; pg.fillText(lbl, a + 15, b); });
+    // escala de 100 m
+    pg.fillStyle = '#fff'; pg.fillRect(20, plan.height - 30, 100 / site.res * SC, 4); pg.textAlign = 'left'; pg.font = '13px system-ui'; pg.fillText('100 m', 20, plan.height - 40);
+    diver.visible = !!curSample;
+    if (curSample) {
+      const [a, b] = toPx(curSample.x, curSample.y);
+      pg.fillStyle = '#ffb703'; pg.beginPath(); pg.arc(a, b, 7, 0, 7); pg.fill();
+      diver.position.copy(to3(curSample.x, curSample.y, -curSample.depth * exag + 1));
+      $('now').textContent = `min ${t.toFixed(1)} · ${curSample.depth.toFixed(1)} m · ${Math.max(0, curSample.p).toFixed(0)} bar · ${curSample.dist.toFixed(0)} m`;
+    } else $('now').textContent = '';
+    drawProfile(last, curSample);
+  }
+  $('time').oninput = e => setTime(+e.target.value);
+  let playing = false;
+  $('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '❚❚' : '▶';
+    if (+$('time').value >= +$('time').max) $('time').value = 0;
+    let prev = performance.now();
+    (function step(now) { if (!playing) return;
+      const tr = $('time'), t = Math.min(+tr.max, +tr.value + (now - prev) / 1000 * 2); prev = now; // 2 min d'immersió per segon
+      tr.value = t; setTime(t);
+      if (t >= +tr.max) { playing = false; $('play').textContent = '▶'; } else requestAnimationFrame(step); })(prev);
+  };
+
+  update();
+}
+</script>
+</body>
+</html>

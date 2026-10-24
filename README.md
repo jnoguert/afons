@@ -21,7 +21,14 @@ Afons creua la ubicació dels punts d'immersió de la Costa Brava (i la resta de
 
 ## Estat actual
 
-Fase 0: definició del projecte. Encara no hi ha codi; el primer pas és el notebook d'exploració de fonts sobre les illes Medes (vegeu el [full de ruta](#full-de-ruta)).
+Primer prototip del **planificador d'immersions**: **<https://jnoguert.github.io/afons/>**. Es publica a GitHub Pages a cada commit a `main`.
+
+- Tries la immersió per zones, marques el recorregut al plànol (ortofoto i isòbates cada 1 m) i veus el 3D, el perfil i l'aire que et quedarà a l'ampolla segons el teu CAS i l'ampolla.
+- Es poden desar rutes al navegador (també com a "recomanades") i exportar-les en JSON. Les rutes del projecte són a `web/sites/index.js`.
+- Per afegir una immersió: afegeix-la a `web/sites/index.js` (UTM 31N) i executa `python src/afons/bathy/clip_site.py`. El script necessita `numpy` i `tifffile` i la batimetria de l'ICGC a `data/raw/`.
+- En local: `python -m http.server 8000` des de l'arrel i obre <http://localhost:8000/web/>.
+- Tests del càlcul: `node web/plan.test.js`.
+- Investigació de fonts: [reports/](reports/).
 
 ## Objectius
 
