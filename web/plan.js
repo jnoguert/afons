@@ -74,4 +74,14 @@ function sampleAt(samples, t) {
   return { t, x: lerp('x'), y: lerp('y'), depth: lerp('depth'), bottom: lerp('bottom'), p: lerp('p'), gas: lerp('gas'), dist: lerp('dist') };
 }
 
-if (typeof module !== 'undefined') module.exports = { makeDepthAt, planDive, sampleAt };
+// Rumb (graus des del nord, en sentit horari) i distància de cada tram entre punts.
+// Coordenades UTM: el nord de quadrícula difereix del geogràfic menys de 0,2° a la costa catalana.
+const RUMBS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+function legs(wps) {
+  return wps.slice(1).map((b, i) => {
+    const a = wps[i], dx = b.x - a.x, dy = b.y - a.y, bearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    return { from: i + 1, to: i + 2, bearing, card: RUMBS[Math.round(bearing / 22.5) % 16], dist: Math.hypot(dx, dy) };
+  });
+}
+
+if (typeof module !== 'undefined') module.exports = { makeDepthAt, planDive, sampleAt, legs };

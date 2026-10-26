@@ -98,6 +98,8 @@
     <div id="pois" class="muted"></div>
     <h2>Resum</h2>
     <div id="summary" class="muted">Afegeix punts al plànol.</div>
+    <h2>Rumbs</h2>
+    <div id="legs" class="muted">Marca almenys dos punts.</div>
     <h2>Vista</h2>
     <label class="f"><span>Exageració vertical 3D</span><input type="number" id="exag" value="1.5" min="1" max="5" step="0.5"><span>×</span></label>
     <label class="f"><span>Tint de batimetria</span><input type="checkbox" id="tint" checked><span></span></label>
@@ -520,6 +522,15 @@ async function init(site) {
        sum.reserveAt ? `<div class="warn">Arribes a la reserva (${state.opts.reserve} bar) al minut ${sum.reserveAt.t.toFixed(0)}, a ${sum.reserveAt.dist.toFixed(0)} m de recorregut.</div>` :
        `<div class="okmsg">Surts amb ${(sum.endP - state.opts.reserve).toFixed(0)} bar per sobre de la reserva.</div>`) +
       (sum.maxDepth > 40 ? '<div class="warn">Supera els 40 m.</div>' : '');
+    // rumbs: direcció, metres, profunditat i minut d'arribada de cada tram
+    let cum = 0;
+    const L = legs(state.wps);
+    $('legs').innerHTML = !L.length ? 'Marca almenys dos punts.' :
+      '<table><tr class="muted"><td>Tram</td><td>Rumb</td><td>Dist.</td><td>Prof.</td><td>Arribes</td></tr>' + L.map(l => {
+        cum += l.dist; const s = S.find(p => p.dist >= cum - 0.01);
+        return `<tr><td>${l.from}→${l.to}</td><td><b>${String(Math.round(l.bearing) % 360).padStart(3, '0')}°</b> ${l.card}</td>` +
+          `<td>${l.dist.toFixed(0)} m</td><td>${s ? s.depth.toFixed(0) : '–'} m</td><td>${s ? `min ${s.t.toFixed(0)}` : ''}</td></tr>`;
+      }).join('') + `</table><p class="auto">Total ${cum.toFixed(0)} m. Rumb respecte al nord geogràfic; amb brúixola, la declinació (~2° E) es pot menysprear.</p>`;
 
     // ruta 3D
     route.clear();
@@ -574,6 +585,12 @@ async function init(site) {
         if (b - a < 2) return; pg.strokeStyle = c; pg.beginPath();
         S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toScr(s.x, s.y))); pg.stroke(); });
     }
+    legs(state.wps).forEach((l, i) => { // rumb i metres al mig de cada tram
+      const a = toScr(state.wps[i].x, state.wps[i].y), b = toScr(state.wps[i + 1].x, state.wps[i + 1].y);
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 70 * u) return; // tram massa curt a la pantalla
+      const t = `${Math.round(l.bearing) % 360}° · ${Math.round(l.dist)} m`, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - 10 * u;
+      pg.font = `bold ${11 * u}px system-ui`; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.lineWidth = 3 * u; pg.strokeStyle = '#0d1b2a';
+      pg.strokeText(t, mx, my); pg.fillStyle = '#fff'; pg.fillText(t, mx, my); });
     state.wps.forEach((w, i) => { const [a, b] = toScr(w.x, w.y);
       pg.fillStyle = '#0d1b2a'; pg.strokeStyle = '#fff'; pg.lineWidth = 1.5 * u; pg.beginPath(); pg.arc(a, b, 9 * u, 0, 7); pg.fill(); pg.stroke();
       pg.fillStyle = '#fff'; pg.font = `bold ${11 * u}px system-ui`; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.fillText(i + 1, a, b + u);

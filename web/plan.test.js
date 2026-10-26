@@ -1,6 +1,13 @@
 // node web/plan.test.js
 const assert = require('assert');
-const { planDive, makeDepthAt } = require('./plan.js');
+const { planDive, makeDepthAt, legs } = require('./plan.js');
+
+// rumbs: nord = 0°, est = 90°, sud-oest = 225°
+const L = legs([{ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 10 }, { x: 0, y: 0 }]);
+assert.deepStrictEqual(L.map(l => Math.round(l.bearing)), [0, 90, 225]);
+assert.deepStrictEqual(L.map(l => l.card), ['N', 'E', 'SO']);
+assert.ok(Math.abs(L[2].dist - Math.hypot(10, 10)) < 1e-9 && L[0].from === 1 && L[0].to === 2);
+assert.strictEqual(legs([{ x: 0, y: 0 }, { x: -1, y: 1 }])[0].card, 'NO');
 
 const o = { sac: 20, vol: 15, p0: 200, reserve: 50, speed: 10, descRate: 18, ascRate: 9, offset: 0, step: 2,
   stopDepth: 5, stopTime: 3, stopMinDepth: 10 };
