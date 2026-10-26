@@ -223,3 +223,6 @@ __marimo__/
 data/raw/
 data/interim/
 data/processed/
+
+# Notes de treball del catàleg d'immersions (només en local)
+research_notes/Immersions Tossa Cap de Creus/

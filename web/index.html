@@ -46,11 +46,14 @@
   #side select { width:100%; }
   #home { padding:4px 16px 24px; max-width:1100px; }
   #home h2 { font-size:15px; margin:18px 0 8px; }
+  #q { width:100%; max-width:420px; background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; margin-top:8px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
   .card { background:var(--panel); padding:14px; border-radius:8px; color:var(--fg); text-decoration:none; display:flex; flex-direction:column; gap:4px; }
   .card:hover { background:#1b3550; }
   .card span { color:var(--muted); font-size:13px; }
   #fitxa { font-size:12px; color:var(--muted); margin:0; }
+  #fitxa .warn { font-weight:400; }
+  #fitxa details { margin-top:4px; } #fitxa summary { cursor:pointer; color:var(--fg); }
   .badge { display:inline-block; background:var(--line); color:var(--fg); border-radius:10px; padding:1px 8px; font-size:12px; margin:2px 4px 2px 0; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:8px 0; }
   button.on { background:var(--acc); color:#000; }
@@ -110,6 +113,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
 <script src="plan.js"></script>
 <script src="sites/index.js"></script>
+<script src="sites/clips.js"></script>
 <script>
 const OPTS = [ // clau, etiqueta, unitat, valor per defecte, pas
   ['sac', 'Consum en superfície (CAS)', 'L/min', 20, 1],
@@ -141,22 +145,26 @@ const ACCES = { costa: 'Des de costa', vaixell: 'Des de vaixell' };
 const badges = s => s.acces.map(a => `<span class="badge">${ACCES[a]}</span>`).join('') + `<span class="badge">${esc(s.nivell)}</span>`;
 if (!entry) {
   $('hint').hidden = true;
-  document.querySelector('main').outerHTML = '<div id="home"><div class="chips" id="filters"></div><div id="list"></div></div>';
-  const filt = { acces: '', nivell: '' }, nivells = [...new Set(SITES.map(s => s.nivell))];
+  document.querySelector('main').outerHTML = '<div id="home"><input id="q" type="search" placeholder="Cerca una immersió…"><div class="chips" id="filters"></div><div id="list"></div></div>';
+  const filt = { acces: '', nivell: '' }, nivells = ['Open Water', 'Advanced', 'Deep'].filter(n => SITES.some(s => s.nivell === n));
   const chips = (k, vals, label) => vals.map(v => `<button data-k="${k}" data-v="${v}" class="${filt[k] === v ? 'on' : ''}">${esc(label(v))}</button>`).join('');
+  const norm = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const renderHome = () => {
     $('filters').innerHTML = chips('acces', Object.keys(ACCES), v => ACCES[v]) + '<span class="muted">·</span>' + chips('nivell', nivells, v => v);
-    const ok = SITES.filter(s => (!filt.acces || s.acces.includes(filt.acces)) && (!filt.nivell || s.nivell === filt.nivell));
-    $('list').innerHTML = zones.filter(z => ok.some(s => s.zone === z)).map(z => `<h2>${esc(z)}</h2><div class="cards">` +
-      ok.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}</span><div>${badges(s)}</div>` +
+    const q = norm($('q').value);
+    const ok = SITES.filter(s => (!filt.acces || s.acces.includes(filt.acces)) && (!filt.nivell || s.nivell === filt.nivell) &&
+      (!q || norm(`${s.name} ${(s.alt_names || []).join(' ')} ${s.zone}`).includes(q)));
+    $('list').innerHTML = zones.filter(z => ok.some(s => s.zone === z)).map(z => `<h2>${esc(z)} <span class="muted">(${ok.filter(s => s.zone === z).length})</span></h2><div class="cards">` +
+      ok.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}${s.prof_max ? ` · ${s.prof_min ?? 0}–${s.prof_max} m` : ''}</span><div>${badges(s)}</div>` +
         (s.rutes.length ? `<span>★ ${s.rutes.length} ${s.rutes.length > 1 ? 'rutes recomanades' : 'ruta recomanada'}</span>` : '') + '</a>').join('') + '</div>').join('')
       || '<p class="muted">Cap immersió amb aquests filtres.</p>';
   };
   $('filters').onclick = e => { const { k, v } = e.target.dataset; if (!k) return; filt[k] = filt[k] === v ? '' : v; renderHome(); };
+  $('q').oninput = renderHome;
   renderHome();
 } else {
   const loader = document.createElement('script');
-  loader.src = `sites/${entry.slug}/site.js`;
+  loader.src = `sites/${(window.AFONS_CLIPS || {})[entry.slug] || entry.slug}/site.js`; // retall compartit amb les immersions properes
   loader.onload = () => init(window.AFONS_SITE).catch(fail);
   loader.onerror = () => { document.querySelector('main').innerHTML = `<p style="padding:16px">No trobo <code>${loader.src}</code>. Genera'l amb <code>python src/afons/bathy/clip_site.py ${entry.slug}</code>.</p>`; };
   document.head.appendChild(loader);
@@ -165,13 +173,20 @@ if (!entry) {
 async function init(site) {
   document.title = `Afons · ${entry.name}`;
   $('title').textContent = `${entry.name} · ${entry.zone}`;
-  $('fitxa').innerHTML = `${badges(entry)}<br>${esc(entry.tipus)}. ${esc(entry.font)}`;
+  $('fitxa').innerHTML = `${badges(entry)}<br>${esc(entry.tipus)}` +
+    (entry.prof_max ? ` · ${entry.prof_min ?? 0}–${entry.prof_max} m` : '') +
+    (entry.prof_icgc && entry.prof_icgc[1] != null ? ` <span class="auto">(batimetria a 80 m: ${entry.prof_icgc[0]}–${entry.prof_icgc[1]} m)</span>` : '') +
+    (entry.alt_names && entry.alt_names.length ? `<br>També: ${entry.alt_names.map(esc).join(', ')}` : '') +
+    (entry.pois && entry.pois.length ? `<br>Què hi ha: ${entry.pois.map(esc).join(' · ')}` : '') +
+    (entry.pos_precisio && entry.pos_precisio !== "punt d'immersió" ? `<br><span class="warn">Posició ${esc(entry.pos_precisio)}</span>` : '') +
+    `<details><summary>Més informació</summary>${entry.notes ? `<p>${esc(entry.notes)}</p>` : ''}<p><i>Posició: ${esc(entry.pos_font || entry.font || '')}</i></p></details>`;
   $('attrib').textContent = site.attribution;
-  const bin = atob(site.elev), bytes = new Uint8Array(bin.length);
+  const bin = atob(site.elevCm), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const elev = new Float32Array(bytes.buffer);
+  const elev = Float32Array.from(new Int16Array(bytes.buffer), v => (v === -32768 ? NaN : v / 100)); // cm -> m
   const depthAt = makeDepthAt(site, elev);
   const W = site.w * site.res, H = site.h * site.res;
+  const sitesHere = SITES.filter(s => s.x >= site.xmin && s.x <= site.xmin + W && s.y <= site.ymax && s.y >= site.ymax - H);
   const toPx = (x, y) => [(x - site.xmin) / site.res * SC, (site.ymax - y) / site.res * SC];
   const fromPx = (px, py) => [site.xmin + px / SC * site.res, site.ymax - py / SC * site.res];
   const isWater = (x, y) => { const c = Math.floor((x - site.xmin) / site.res), r = Math.floor((site.ymax - y) / site.res);
@@ -204,9 +219,12 @@ async function init(site) {
     const band = new Int16Array(bw * base.height).fill(-1); // franja d'1 m de cada píxel
     const LBL = 140, labels = [];
     for (let py = 0; py < base.height; py++) for (let qx = 0; qx < bw; qx++) {
-      const [x, y] = fromPx(qx + 0.5, py + 0.5);
-      if (!isWater(x, y)) continue;
-      const d = depthAt(x, y), i = py * bw + qx, b = band[i] = Math.floor(d);
+      const [x, y] = fromPx(qx + 0.5, py + 0.5), i = py * bw + qx;
+      if (!isWater(x, y)) { // fora de l'ortofoto i sense batimetria (mar endins de −50 m): blau fosc
+        if (px[i * 4] > 235 && px[i * 4 + 1] > 235 && px[i * 4 + 2] > 235) px.set([16, 42, 74], i * 4);
+        continue;
+      }
+      const d = depthAt(x, y), b = band[i] = Math.floor(d);
       const l = qx ? band[i - 1] : -1, u = py ? band[i - bw] : -1;
       const minor = (l >= 0 && l !== b) || (u >= 0 && u !== b);
       const major = minor && ((l >= 0 && (l / 5 | 0) !== (b / 5 | 0)) || (u >= 0 && (u / 5 | 0) !== (b / 5 | 0)));
@@ -227,8 +245,13 @@ async function init(site) {
   // --- capa de tipus de fons (Mapa dels hàbitats marins, Generalitat) ---
   const HABCOL = { 'Posidònia': '#1f9d55', 'Mata morta de posidònia': '#8a7d3c', 'Altres fanerògames': '#7cc35b', 'Coral·ligen': '#e0457b',
     'Roca': '#8c5a3c', 'Còdols i graves': '#b59f7b', 'Detrític': '#d6b98c', 'Sorra': '#f4dc8d', 'Fang': '#9b8b78', 'Antròpic': '#8a8a8a', 'Altres': '#c9c9c9' };
-  const classes = site.habClasses || [], habBin = atob(site.hab || ''), hab = new Uint8Array(habBin.length);
-  for (let i = 0; i < habBin.length; i++) hab[i] = habBin.charCodeAt(i);
+  const classes = site.habClasses || [], hab = new Uint8Array(site.habPng ? site.w * site.h : 0);
+  if (site.habPng) { // PNG en gris: el valor de cada píxel és l'índex de classe
+    const im = new Image(); im.src = site.habPng; await im.decode();
+    const c = document.createElement('canvas'); c.width = site.w; c.height = site.h;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, site.w, site.h).data;
+    for (let i = 0; i < hab.length; i++) hab[i] = d[i * 4];
+  }
   const habAt = (x, y) => { const c = Math.floor((x - site.xmin) / site.res), r = Math.floor((site.ymax - y) / site.res);
     return classes[hab[r * site.w + c] - 1]; };
   const habCanvas = document.createElement('canvas'); habCanvas.width = site.w; habCanvas.height = site.h;
@@ -389,22 +412,22 @@ async function init(site) {
   scene.add(water);
   const route = new THREE.Group(); scene.add(route);
   const poiGroup = new THREE.Group(); scene.add(poiGroup);
-  function label3D(text) {
+  function label3D(text, color) {
     const c = document.createElement('canvas'); c.width = 512; c.height = 96; const g = c.getContext('2d');
     g.font = 'bold 44px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8; g.strokeStyle = '#0d1b2a';
-    g.strokeText(text, 256, 48); g.fillStyle = '#ff9df0'; g.fillText(text, 256, 48);
+    g.strokeText(text, 256, 48); g.fillStyle = color; g.fillText(text, 256, 48);
     const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false })); s.scale.set(80, 15, 1); return s;
   }
   function drawPois3D() {
     poiGroup.children.forEach(o => { if (o.material.map) o.material.map.dispose(); o.material.dispose(); if (!o.isSprite) o.geometry.dispose(); });
     poiGroup.clear();
-    pois.forEach(p => {
+    [...pois.map(p => [p, 0xff4fd8, '#ff9df0']), [{ nom: entry.name, x: entry.x, y: entry.y }, 0x4cc9f0, '#bde9ff']].forEach(([p, col, txt]) => {
       const bot = -depthAt(p.x, p.y) * exag;
-      poiGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([to3(p.x, p.y, bot), to3(p.x, p.y, 10)]), new THREE.LineBasicMaterial({ color: 0xff4fd8 })));
-      const m = new THREE.Mesh(new THREE.OctahedronGeometry(2.5), new THREE.MeshBasicMaterial({ color: 0xff4fd8 }));
+      poiGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([to3(p.x, p.y, bot), to3(p.x, p.y, 10)]), new THREE.LineBasicMaterial({ color: col })));
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(2.5), new THREE.MeshBasicMaterial({ color: col }));
       m.position.copy(to3(p.x, p.y, bot + 2)); poiGroup.add(m);
-      const s = label3D(p.nom); s.position.copy(to3(p.x, p.y, 18)); poiGroup.add(s);
+      const s = label3D(p.nom, txt); s.position.copy(to3(p.x, p.y, 18)); poiGroup.add(s);
     });
   }
   const diver = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffb703 }));
@@ -510,6 +533,10 @@ async function init(site) {
       pg.fillRect(-7, -7, 14, 14); pg.strokeRect(-7, -7, 14, 14); pg.restore();
       pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.textBaseline = 'middle'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
       pg.strokeText(p.nom, a + 12, b - 12); pg.fillStyle = '#ff9df0'; pg.fillText(p.nom, a + 12, b - 12); });
+    sitesHere.forEach(s => { const [a, b] = toScr(s.x, s.y), cur = s === entry; // immersions del catàleg dins del retall
+      pg.beginPath(); pg.arc(a, b, cur ? 10 : 6, 0, 7); pg.lineWidth = cur ? 4 : 2; pg.strokeStyle = '#4cc9f0'; pg.stroke();
+      pg.font = `${cur ? 'bold 15px' : '13px'} system-ui`; pg.textAlign = 'left'; pg.textBaseline = 'middle'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
+      pg.strokeText(s.name, a + 12, b + 12); pg.fillStyle = '#bde9ff'; pg.fillText(s.name, a + 12, b + 12); });
     if (S.length) {
       const split = last.summary.reserveAt ? S.indexOf(last.summary.reserveAt) : S.length;
       pg.lineWidth = 4; pg.lineJoin = 'round';
