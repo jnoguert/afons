@@ -14,7 +14,7 @@
   main { display:grid; grid-template-columns:290px 1fr 1fr; grid-template-rows:minmax(0,1fr) 240px; gap:8px; padding:0 8px 8px; height:calc(100vh - 40px); }
   #side { grid-row:1/3; background:var(--panel); border-radius:8px; padding:12px; overflow:auto; }
   .pane { background:var(--panel); border-radius:8px; position:relative; overflow:hidden; min-height:0; display:flex; align-items:center; justify-content:center; }
-  #plan { height:100%; max-width:100%; aspect-ratio:1/1; display:block; cursor:crosshair; touch-action:none; }
+  #plan { height:100%; max-width:100%; aspect-ratio:1/1; display:block; cursor:crosshair; touch-action:pan-y; } /* un dit = scroll de la pàgina */
   #profilePane { grid-column:2/4; flex-direction:column; align-items:stretch; padding:6px 10px; }
   #profile { flex:1; width:100%; min-height:0; }
   .tag { position:absolute; left:8px; top:8px; background:#0d1b2acc; padding:3px 8px; border-radius:6px; font-size:12px; pointer-events:none; }
@@ -47,7 +47,7 @@
   #home { padding:4px 16px 24px; max-width:1100px; }
   #home h2 { font-size:15px; margin:18px 0 8px; }
   #q { width:100%; max-width:420px; background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit; margin-top:8px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap:10px; }
   .card { background:var(--panel); padding:14px; border-radius:8px; color:var(--fg); text-decoration:none; display:flex; flex-direction:column; gap:4px; }
   .card:hover { background:#1b3550; }
   .card span { color:var(--muted); font-size:13px; }
@@ -62,10 +62,16 @@
   .sw { display:inline-block; width:11px; height:11px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
   #pois div { display:flex; justify-content:space-between; gap:6px; padding:2px 0; border-bottom:1px dotted var(--line); }
   @media (max-width: 900px) {
-    main { grid-template-columns:1fr; grid-template-rows:none; height:auto; }
-    #side { grid-row:auto; }
-    .pane { height:70vh; }
-    #profilePane { grid-column:auto; height:280px; }
+    header { padding:8px 12px; gap:8px; } #hint { display:none; } #sitesel { flex:1; min-width:0; }
+    main { display:flex; flex-direction:column; height:auto; padding:0 8px 16px; }
+    .pane { height:60vh; }
+    #planPane { order:1; height:auto; aspect-ratio:1/1; }
+    #plan { width:100%; height:100%; }
+    #profilePane { order:2; height:240px; }
+    #side { order:3; }
+    #pane3d { order:4; }
+    #planTag { display:none; }
+    #now { min-width:0; font-size:12px; }
   }
 </style>
 </head>
@@ -101,7 +107,7 @@
       <p id="attrib"></p>
     </footer>
   </aside>
-  <section class="pane"><canvas id="plan"></canvas><span class="tag">Plànol · roda o +/− per fer zoom, arrossega per moure't</span><span id="zoom"><button data-z="1.5" title="Apropa">+</button><button data-z="0.667" title="Allunya">−</button><button data-z="0" title="Vista sencera">⟲</button></span><span class="tag" id="hover"></span><span class="tag" id="habLegend" hidden></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
+  <section class="pane" id="planPane"><canvas id="plan"></canvas><span class="tag" id="planTag">Plànol · zoom amb la roda, +/− o dos dits</span><span id="zoom"><button data-z="1.5" title="Apropa">+</button><button data-z="0.667" title="Allunya">−</button><button data-z="0" title="Vista sencera">⟲</button></span><span class="tag" id="hover"></span><span class="tag" id="habLegend" hidden></span><span class="tag" id="legend"><div></div><span>0 · 10 · 20 · 30 · 45 m · isòbates cada 1 m</span></span></section>
   <section class="pane" id="pane3d"><span class="tag">3D · arrossega per girar, roda per zoom</span></section>
   <section class="pane" id="profilePane">
     <canvas id="profile"></canvas>
@@ -134,13 +140,16 @@ const fail = err => { const p = document.createElement('pre'); p.style.cssText =
 window.addEventListener('error', e => fail(e.error || e.message));
 
 // --- catàleg: menú per zones ---
-const SITES = window.AFONS_SITES || [];
-const slug = new URLSearchParams(location.search).get('site');
-const entry = SITES.find(s => s.slug === slug);
+// només es mostren les immersions revisades; amb ?tots a l'URL es veuen totes (per revisar-les)
+const params = new URLSearchParams(location.search), showAll = params.has('tots');
+const ALL = window.AFONS_SITES || [], SITES = showAll ? ALL : ALL.filter(s => s.revisat);
+const slug = params.get('site');
+const entry = ALL.find(s => s.slug === slug);
+const siteUrl = sl => `?site=${sl}${showAll ? '&tots' : ''}`;
 const zones = [...new Set(SITES.map(s => s.zone))];
 $('sitesel').innerHTML = '<option value="">Tria una immersió…</option>' + zones.map(z => `<optgroup label="${esc(z)}">` +
   SITES.filter(s => s.zone === z).map(s => `<option value="${s.slug}"${s === entry ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + '</optgroup>').join('');
-$('sitesel').onchange = e => { location.search = e.target.value ? `?site=${e.target.value}` : ''; };
+$('sitesel').onchange = e => { location.search = e.target.value ? siteUrl(e.target.value) : (showAll ? '?tots' : ''); };
 const ACCES = { costa: 'Des de costa', vaixell: 'Des de vaixell' };
 const badges = s => s.acces.map(a => `<span class="badge">${ACCES[a]}</span>`).join('') + `<span class="badge">${esc(s.nivell)}</span>`;
 if (!entry) {
@@ -155,7 +164,7 @@ if (!entry) {
     const ok = SITES.filter(s => (!filt.acces || s.acces.includes(filt.acces)) && (!filt.nivell || s.nivell === filt.nivell) &&
       (!q || norm(`${s.name} ${(s.alt_names || []).join(' ')} ${s.zone}`).includes(q)));
     $('list').innerHTML = zones.filter(z => ok.some(s => s.zone === z)).map(z => `<h2>${esc(z)} <span class="muted">(${ok.filter(s => s.zone === z).length})</span></h2><div class="cards">` +
-      ok.filter(s => s.zone === z).map(s => `<a class="card" href="?site=${s.slug}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}${s.prof_max ? ` · ${s.prof_min ?? 0}–${s.prof_max} m` : ''}</span><div>${badges(s)}</div>` +
+      ok.filter(s => s.zone === z).map(s => `<a class="card" href="${siteUrl(s.slug)}"><b>${esc(s.name)}</b><span>${esc(s.tipus)}${s.prof_max ? ` · ${s.prof_min ?? 0}–${s.prof_max} m` : ''}</span><div>${badges(s)}</div>` +
         (s.rutes.length ? `<span>★ ${s.rutes.length} ${s.rutes.length > 1 ? 'rutes recomanades' : 'ruta recomanada'}</span>` : '') + '</a>').join('') + '</div>').join('')
       || '<p class="muted">Cap immersió amb aquests filtres.</p>';
   };
@@ -237,7 +246,7 @@ async function init(site) {
     g.putImageData(im, 0, 0);
     isoLabels = labels;
   }
-  const drawLabels = (g, pts) => { g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
+  const drawLabels = (g, pts, size = 13) => { g.font = `bold ${size}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = size / 4; g.strokeStyle = '#0d1b2a'; g.fillStyle = '#fff';
     pts.forEach(([a, b, v]) => { g.strokeText(`${v}`, a, b); g.fillText(`${v}`, a, b); }); };
   let isoLabels = [];
   drawBase();
@@ -288,19 +297,22 @@ async function init(site) {
     view.tx = px - (px - view.tx) * f; view.ty = py - (py - view.ty) * f; view.z = z; clampView(); drawPlan();
   }
   const autoDepth = (x, y) => Math.round(Math.max(0, depthAt(x, y) - state.opts.offset) * 2) / 2;
-  const near = (px, py) => state.wps.findIndex(w => { const [a, b] = toScr(w.x, w.y); return Math.hypot(a - px, b - py) < cssPx(14); });
+  const near = (px, py) => state.wps.findIndex(w => { const [a, b] = toScr(w.x, w.y); return Math.hypot(a - px, b - py) < cssPx(16); }); // prou gran per a un dit
   let drag = -1, pan = null;
+  const showHover = (px, py) => { const [x, y] = scrToUtm(px, py), h = habAt(x, y), p = nearPoi(px, py);
+    $('hover').textContent = p ? `${p.nom} · ${p.tipus}${p.nota ? ` — ${p.nota}` : ''}` :
+      isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m${h ? ` · ${h.cat} (${h.nom.replace(/^\d+ - /, '')})` : ''}` : 'Terra'; };
   plan.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const [px, py] = evPx(e), i = near(px, py);
     if (i >= 0) drag = i; else pan = { px, py, tx: view.tx, ty: view.ty, moved: false };
+    showHover(px, py);
     plan.setPointerCapture(e.pointerId);
   });
+  plan.addEventListener('pointercancel', () => { drag = -1; pan = null; }); // el navegador ha començat a fer scroll
   plan.addEventListener('pointermove', e => {
     const [px, py] = evPx(e), [x, y] = scrToUtm(px, py);
-    const h = habAt(x, y), p = nearPoi(px, py);
-    $('hover').textContent = p ? `${p.nom} · ${p.tipus}${p.nota ? ` — ${p.nota}` : ''}` :
-      isWater(x, y) ? `Fons: ${depthAt(x, y).toFixed(1)} m${h ? ` · ${h.cat} (${h.nom.replace(/^\d+ - /, '')})` : ''}` : 'Terra';
+    showHover(px, py);
     if (drag >= 0) { const w = state.wps[drag]; w.x = x; w.y = y; if (w.auto) w.depth = autoDepth(x, y); update(); }
     else if (pan) {
       pan.moved = pan.moved || Math.hypot(px - pan.px, py - pan.py) > cssPx(6);
@@ -316,6 +328,22 @@ async function init(site) {
     drag = -1; pan = null; save();
   });
   plan.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, ...evPx(e)); }, { passive: false });
+  // pantalla tàctil: un dit fa scroll de la pàgina (o arrossega un punt si toques un punt); dos dits fan zoom i mouen el plànol
+  let pinch = null;
+  const two = e => { const [a, b] = [evPx(e.touches[0]), evPx(e.touches[1])];
+    return { d: Math.hypot(a[0] - b[0], a[1] - b[1]), m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; };
+  plan.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) { e.preventDefault(); drag = -1; pan = null; pinch = two(e); }
+    else if (e.touches.length === 1 && near(...evPx(e.touches[0])) >= 0) e.preventDefault();
+  }, { passive: false });
+  plan.addEventListener('touchmove', e => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const t = two(e);
+    view.tx += t.m[0] - pinch.m[0]; view.ty += t.m[1] - pinch.m[1];
+    zoomAt(t.d / pinch.d, t.m[0], t.m[1]); pinch = t;
+  }, { passive: false });
+  plan.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
   $('zoom').onclick = e => { const f = e.target.dataset.z; if (f !== undefined) zoomAt(+f, plan.width / 2, plan.height / 2); };
   plan.addEventListener('contextmenu', e => { e.preventDefault();
     const i = near(...evPx(e)), p = nearPoi(...evPx(e));
@@ -394,6 +422,7 @@ async function init(site) {
   camera.position.set(W * 0.35, W * 0.5, H * 0.75);
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.target.set(0, -15, 0);
+  renderer.domElement.style.touchAction = 'pan-y'; // al mòbil, el gest vertical fa scroll de la pàgina; l'horitzontal gira el 3D
   scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 0.75));
   const sun = new THREE.DirectionalLight(0xffffff, 0.75); sun.position.set(-400, 600, -300); scene.add(sun);
   const to3 = (x, y, z) => new THREE.Vector3(x - (site.xmin + W / 2), z, (site.ymax - H / 2) - y);
@@ -527,33 +556,32 @@ async function init(site) {
     pg.fillStyle = '#0d1b2a'; pg.fillRect(0, 0, plan.width, plan.height);
     pg.drawImage(base, view.tx, view.ty, base.width * view.z, base.height * view.z);
     drawHab(pg, view.tx, view.ty, base.width * view.z, base.height * view.z);
-    drawLabels(pg, isoLabels.map(([qx, py, v]) => [qx * view.z + view.tx, py * view.z + view.ty, v]));
+    const u = cssPx(1); // mides en píxels de pantalla: es llegeixen igual al mòbil i al PC
+    const text = (t, a, b, size, color, bold = true) => { pg.font = `${bold ? 'bold ' : ''}${size * u}px system-ui`; pg.textAlign = 'left'; pg.textBaseline = 'middle';
+      pg.lineWidth = 3 * u; pg.strokeStyle = '#0d1b2a'; pg.strokeText(t, a, b); pg.fillStyle = color; pg.fillText(t, a, b); };
+    drawLabels(pg, isoLabels.map(([qx, py, v]) => [qx * view.z + view.tx, py * view.z + view.ty, v]), 10 * u);
     pois.forEach(p => { const [a, b] = toScr(p.x, p.y); // rombe + nom
-      pg.save(); pg.translate(a, b); pg.rotate(Math.PI / 4); pg.fillStyle = '#ff4fd8'; pg.strokeStyle = '#fff'; pg.lineWidth = 2;
-      pg.fillRect(-7, -7, 14, 14); pg.strokeRect(-7, -7, 14, 14); pg.restore();
-      pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.textBaseline = 'middle'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
-      pg.strokeText(p.nom, a + 12, b - 12); pg.fillStyle = '#ff9df0'; pg.fillText(p.nom, a + 12, b - 12); });
+      pg.save(); pg.translate(a, b); pg.rotate(Math.PI / 4); pg.fillStyle = '#ff4fd8'; pg.strokeStyle = '#fff'; pg.lineWidth = 1.5 * u;
+      pg.fillRect(-5 * u, -5 * u, 10 * u, 10 * u); pg.strokeRect(-5 * u, -5 * u, 10 * u, 10 * u); pg.restore();
+      text(p.nom, a + 9 * u, b - 9 * u, 12, '#ff9df0'); });
     sitesHere.forEach(s => { const [a, b] = toScr(s.x, s.y), cur = s === entry; // immersions del catàleg dins del retall
-      pg.beginPath(); pg.arc(a, b, cur ? 10 : 6, 0, 7); pg.lineWidth = cur ? 4 : 2; pg.strokeStyle = '#4cc9f0'; pg.stroke();
-      pg.font = `${cur ? 'bold 15px' : '13px'} system-ui`; pg.textAlign = 'left'; pg.textBaseline = 'middle'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
-      pg.strokeText(s.name, a + 12, b + 12); pg.fillStyle = '#bde9ff'; pg.fillText(s.name, a + 12, b + 12); });
+      pg.beginPath(); pg.arc(a, b, (cur ? 7 : 4.5) * u, 0, 7); pg.lineWidth = (cur ? 3 : 1.5) * u; pg.strokeStyle = '#4cc9f0'; pg.stroke();
+      text(s.name, a + 9 * u, b + 9 * u, cur ? 12 : 11, '#bde9ff', cur); });
     if (S.length) {
       const split = last.summary.reserveAt ? S.indexOf(last.summary.reserveAt) : S.length;
-      pg.lineWidth = 4; pg.lineJoin = 'round';
+      pg.lineWidth = 3 * u; pg.lineJoin = 'round';
       [[0, split + 1, '#ffb703'], [split, S.length, '#ff5d5d']].forEach(([a, b, c]) => {
         if (b - a < 2) return; pg.strokeStyle = c; pg.beginPath();
         S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toScr(s.x, s.y))); pg.stroke(); });
     }
     state.wps.forEach((w, i) => { const [a, b] = toScr(w.x, w.y);
-      pg.fillStyle = '#0d1b2a'; pg.strokeStyle = '#fff'; pg.lineWidth = 2; pg.beginPath(); pg.arc(a, b, 11, 0, 7); pg.fill(); pg.stroke();
-      pg.fillStyle = '#fff'; pg.font = 'bold 13px system-ui'; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.fillText(i + 1, a, b + 1);
-      const lbl = `${w.depth} m · fons ${depthAt(w.x, w.y).toFixed(1)}`; // profunditat on has clicat
-      pg.font = 'bold 14px system-ui'; pg.textAlign = 'left'; pg.lineWidth = 4; pg.strokeStyle = '#0d1b2a';
-      pg.strokeText(lbl, a + 15, b); pg.fillStyle = '#ffb703'; pg.fillText(lbl, a + 15, b); });
+      pg.fillStyle = '#0d1b2a'; pg.strokeStyle = '#fff'; pg.lineWidth = 1.5 * u; pg.beginPath(); pg.arc(a, b, 9 * u, 0, 7); pg.fill(); pg.stroke();
+      pg.fillStyle = '#fff'; pg.font = `bold ${11 * u}px system-ui`; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.fillText(i + 1, a, b + u);
+      text(`${w.depth} m · fons ${depthAt(w.x, w.y).toFixed(1)}`, a + 12 * u, b, 12, '#ffb703'); }); // profunditat on has clicat
     // escala gràfica que s'adapta al zoom
-    const mpx = SC / site.res * view.z, len = [200, 100, 50, 20, 10, 5].find(m => m * mpx <= 220) || 5;
-    pg.fillStyle = '#fff'; pg.fillRect(20, plan.height - 30, len * mpx, 4); pg.textAlign = 'left'; pg.font = '13px system-ui'; pg.fillText(`${len} m`, 20, plan.height - 40);
-    if (curSample) { const [a, b] = toScr(curSample.x, curSample.y); pg.fillStyle = '#ffb703'; pg.beginPath(); pg.arc(a, b, 7, 0, 7); pg.fill(); }
+    const mpx = SC / site.res * view.z, len = [200, 100, 50, 20, 10, 5].find(m => m * mpx <= 120 * u) || 5;
+    pg.fillStyle = '#fff'; pg.fillRect(12 * u, plan.height - 14 * u, len * mpx, 3 * u); text(`${len} m`, 12 * u, plan.height - 24 * u, 11, '#fff', false);
+    if (curSample) { const [a, b] = toScr(curSample.x, curSample.y); pg.fillStyle = '#ffb703'; pg.beginPath(); pg.arc(a, b, 5 * u, 0, 7); pg.fill(); }
   }
   $('time').oninput = e => setTime(+e.target.value);
   let playing = false;
@@ -568,6 +596,7 @@ async function init(site) {
 
   update();
   refreshPois();
+  new ResizeObserver(() => drawPlan()).observe(plan); // les mides del plànol depenen de la mida a la pantalla
 }
 </script>
 </body>
