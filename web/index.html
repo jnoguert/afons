@@ -19,7 +19,9 @@
   small, .muted { color:var(--muted); }
 
   /* capçalera */
-  header { position:sticky; top:0; z-index:5; display:flex; gap:14px; align-items:center; padding:10px 16px;
+  .top { position:sticky; top:0; z-index:6; }
+  #disclaimer { background:#b3261e; color:#fff; font-size:13px; line-height:1.35; padding:7px 16px; text-align:center; }
+  header { display:flex; gap:14px; align-items:center; padding:10px 16px;
     background:rgba(7,19,31,.86); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
   .brand { display:flex; align-items:baseline; gap:8px; color:var(--fg); text-decoration:none; white-space:nowrap; }
   .brand h1 { font-size:20px; margin:0; letter-spacing:.01em; }
@@ -29,7 +31,8 @@
   #hint { flex:1; text-align:right; font-size:12px; }
 
   /* planificador */
-  main { display:grid; grid-template-columns:330px 1fr 1fr; grid-template-rows:minmax(0,1fr) 250px; gap:12px; padding:12px; height:calc(100vh - 57px); }
+  body.planner { height:100vh; display:flex; flex-direction:column; overflow:hidden; } /* la franja i la capçalera queden fixes a dalt */
+  main { display:grid; grid-template-columns:330px 1fr 1fr; grid-template-rows:minmax(0,1fr) 250px; gap:12px; padding:12px; flex:1; min-height:0; }
   #side { grid-row:1/3; overflow:auto; display:flex; flex-direction:column; gap:10px; padding-right:2px; }
   .sec { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; }
   .sec h2 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 8px; }
@@ -114,6 +117,8 @@
 
   @media (max-width: 900px) {
     header { padding:8px 12px; gap:8px; } #hint, .brand small { display:none; } #sitesel { flex:1; min-width:0; }
+    body.planner { height:auto; display:block; overflow:visible; }
+    #disclaimer { font-size:12px; padding:6px 10px; }
     main { display:flex; flex-direction:column; height:auto; padding:8px 8px 16px; gap:10px; }
     #side { display:contents; } /* les seves seccions es reordenen amb la resta */
     .pane { height:60vh; }
@@ -132,6 +137,9 @@
     :root { --bg:#fff; --bg2:#fff; --panel:#fff; --panel2:#f2f5f8; --line:#d3dbe3; --line2:#c2cdd8; --fg:#0b1b2b; --muted:#506273; --shadow:none; }
     html { color-scheme:light; }
     body { background:#fff; font-size:11.5px; }
+    body.planner { height:auto; display:block; overflow:visible; }
+    .top { position:static; }
+    #disclaimer { background:#fff; color:#b3261e; border:1.5px solid #b3261e; border-radius:6px; margin-bottom:4mm; }
     header, #zoom, .tag, #pane3d, #playbar, .noprint, details, #fitxa .warn { display:none !important; }
     #legend { display:flex !important; background:rgba(255,255,255,.9); color:var(--fg); border-color:var(--line); backdrop-filter:none; }
     .printonly { display:block; }
@@ -148,12 +156,15 @@
 </style>
 </head>
 <body>
+<div class="top">
+<div id="disclaimer" role="note"><b>⚠ Projecte de prova.</b> No et fiïs de les dades ni dels càlculs d'aquesta web: poden contenir errors. Segueix sempre els protocols de seguretat, el teu ordinador de busseig i les indicacions dels guies i centres de busseig.</div>
 <header>
   <a class="brand" href="./"><h1>🤿 Af<span>o</span>ns</h1><small>planificador d'immersions</small></a>
   <select id="sitesel" aria-label="Immersió"></select>
   <small id="hint">Clica al plànol per afegir punts · arrossega'ls per moure'ls · clic dret per esborrar-ne un</small>
   <button id="pdf" class="primary" hidden title="Obre el diàleg d'impressió: tria «Desa com a PDF»">Exporta PDF</button>
 </header>
+</div>
 <main>
   <aside id="side">
     <section class="sec sec-info">
@@ -251,7 +262,7 @@ $('sitesel').onchange = e => { location.search = e.target.value ? siteUrl(e.targ
 const ACCES = { costa: 'Des de costa', vaixell: 'Des de vaixell' };
 const badges = s => s.acces.map(a => `<span class="badge b-${a}">${ACCES[a]}</span>`).join('') +
   `<span class="badge b-${String(s.nivell).toLowerCase().replace(/\s+/g, '-')}">${esc(s.nivell)}</span>`;
-if (entry) { $('pdf').hidden = false; $('pdf').onclick = () => window.print(); } // Imprimeix -> Desa com a PDF
+if (entry) { document.body.classList.add('planner'); $('pdf').hidden = false; $('pdf').onclick = () => window.print(); } // Imprimeix -> Desa com a PDF
 if (!entry) {
   $('hint').hidden = true;
   document.querySelector('main').outerHTML = '<div id="home"><div class="hero"><h2>Immersions de la Costa Brava</h2>' +
@@ -389,7 +400,8 @@ async function init(site) {
   const plan = $('plan'); plan.width = base.width; plan.height = base.height;
   const pg = plan.getContext('2d');
   const evPx = e => { const r = plan.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * plan.width, (e.clientY - r.top) / r.height * plan.height]; };
-  const cssPx = n => n * plan.width / plan.getBoundingClientRect().width; // n píxels de pantalla en píxels del canvas
+  let printW = 0; // en imprimir, el plànol fa 112 mm (~423 px CSS): les mides es calculen per a aquesta amplada
+  const cssPx = n => n * plan.width / (printW || plan.getBoundingClientRect().width); // n píxels de pantalla en píxels del canvas
   // vista: píxel del canvas = píxel del plànol base * z + t
   const view = { z: 1, tx: 0, ty: 0 };
   const toScr = (x, y) => { const [a, b] = toPx(x, y); return [a * view.z + view.tx, b * view.z + view.ty]; };
@@ -733,6 +745,8 @@ async function init(site) {
   update();
   refreshPois();
   new ResizeObserver(() => drawPlan()).observe(plan); // les mides del plànol depenen de la mida a la pantalla
+  addEventListener('beforeprint', () => { printW = 423; drawPlan(); });
+  addEventListener('afterprint', () => { printW = 0; drawPlan(); });
 }
 </script>
 </body>
