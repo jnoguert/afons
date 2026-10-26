@@ -99,6 +99,7 @@
     <h2>Resum</h2>
     <div id="summary" class="muted">Afegeix punts al plànol.</div>
     <h2>Rumbs</h2>
+    <label class="f"><span>Gir mínim per canviar de rumb</span><input type="number" id="minTurn" value="20" min="0" max="90" step="5"><span class="muted">°</span></label>
     <div id="legs" class="muted">Marca almenys dos punts.</div>
     <h2>Vista</h2>
     <label class="f"><span>Exageració vertical 3D</span><input type="number" id="exag" value="1.5" min="1" max="5" step="0.5"><span>×</span></label>
@@ -205,7 +206,7 @@ async function init(site) {
 
   // --- estat (desat al navegador per punt d'immersió) ---
   const KEY = `afons:${slug}`;
-  let state = { wps: [], opts: Object.fromEntries(OPTS.map(o => [o[0], o[3]])), stop: true };
+  let state = { wps: [], opts: Object.fromEntries(OPTS.map(o => [o[0], o[3]])), stop: true, minTurn: 20 };
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.wps) state = { ...state, ...s, opts: { ...state.opts, ...s.opts } }; } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
@@ -503,6 +504,14 @@ async function init(site) {
   }
   new ResizeObserver(() => drawProfile(last, curSample)).observe(prof);
 
+  // trams de navegació: rumbs entre els punts que queden després de simplificar (numeració dels punts originals)
+  function simpLegs() {
+    const keep = simplify(state.wps, state.minTurn);
+    return legs(keep.map(i => state.wps[i])).map((l, j) => ({ ...l, from: keep[j] + 1, to: keep[j + 1] + 1 }));
+  }
+  $('minTurn').value = state.minTurn;
+  $('minTurn').oninput = e => { const v = parseFloat(e.target.value); if (v >= 0) { state.minTurn = v; update(false); } };
+
   // --- recàlcul i dibuix ---
   function update(redrawList = true) {
     setRelief();
@@ -522,15 +531,16 @@ async function init(site) {
        sum.reserveAt ? `<div class="warn">Arribes a la reserva (${state.opts.reserve} bar) al minut ${sum.reserveAt.t.toFixed(0)}, a ${sum.reserveAt.dist.toFixed(0)} m de recorregut.</div>` :
        `<div class="okmsg">Surts amb ${(sum.endP - state.opts.reserve).toFixed(0)} bar per sobre de la reserva.</div>`) +
       (sum.maxDepth > 40 ? '<div class="warn">Supera els 40 m.</div>' : '');
-    // rumbs: direcció, metres, profunditat i minut d'arribada de cada tram
-    let cum = 0;
-    const L = legs(state.wps);
+    // rumbs de la ruta simplificada: direcció, metres en línia recta, profunditat i minut d'arribada
+    const L = simpLegs(), along = [0]; // distància recorreguda fins a cada punt (ruta completa)
+    state.wps.forEach((w, i) => { if (i) along.push(along[i - 1] + Math.hypot(w.x - state.wps[i - 1].x, w.y - state.wps[i - 1].y)); });
     $('legs').innerHTML = !L.length ? 'Marca almenys dos punts.' :
       '<table><tr class="muted"><td>Tram</td><td>Rumb</td><td>Dist.</td><td>Prof.</td><td>Arribes</td></tr>' + L.map(l => {
-        cum += l.dist; const s = S.find(p => p.dist >= cum - 0.01);
+        const s = S.find(p => p.dist >= along[l.to - 1] - 0.01);
         return `<tr><td>${l.from}→${l.to}</td><td><b>${String(Math.round(l.bearing) % 360).padStart(3, '0')}°</b> ${l.card}</td>` +
           `<td>${l.dist.toFixed(0)} m</td><td>${s ? s.depth.toFixed(0) : '–'} m</td><td>${s ? `min ${s.t.toFixed(0)}` : ''}</td></tr>`;
-      }).join('') + `</table><p class="auto">Total ${cum.toFixed(0)} m. Rumb respecte al nord geogràfic; amb brúixola, la declinació (~2° E) es pot menysprear.</p>`;
+      }).join('') + `</table><p class="auto">${L.length} ${L.length > 1 ? 'rumbs' : 'rumb'} per a ${state.wps.length} punts. ` +
+      `Recorregut complet ${along[along.length - 1].toFixed(0)} m. Rumb respecte al nord geogràfic; amb brúixola, la declinació (~2° E) es pot menysprear.</p>`;
 
     // ruta 3D
     route.clear();
@@ -585,8 +595,14 @@ async function init(site) {
         if (b - a < 2) return; pg.strokeStyle = c; pg.beginPath();
         S.slice(a, b).forEach((s, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toScr(s.x, s.y))); pg.stroke(); });
     }
-    legs(state.wps).forEach((l, i) => { // rumb i metres al mig de cada tram
-      const a = toScr(state.wps[i].x, state.wps[i].y), b = toScr(state.wps[i + 1].x, state.wps[i + 1].y);
+    const SL = simpLegs();
+    if (SL.length < state.wps.length - 1) { // ruta simplificada (la que es navega) en blanc discontinu
+      pg.setLineDash([7 * u, 5 * u]); pg.lineWidth = 2 * u; pg.strokeStyle = '#ffffff'; pg.beginPath();
+      [SL[0].from, ...SL.map(l => l.to)].forEach((n, i) => (i ? pg.lineTo : pg.moveTo).call(pg, ...toScr(state.wps[n - 1].x, state.wps[n - 1].y)));
+      pg.stroke(); pg.setLineDash([]);
+    }
+    SL.forEach(l => { // rumb i metres al mig de cada tram simplificat
+      const a = toScr(state.wps[l.from - 1].x, state.wps[l.from - 1].y), b = toScr(state.wps[l.to - 1].x, state.wps[l.to - 1].y);
       if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 70 * u) return; // tram massa curt a la pantalla
       const t = `${Math.round(l.bearing) % 360}° · ${Math.round(l.dist)} m`, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - 10 * u;
       pg.font = `bold ${11 * u}px system-ui`; pg.textAlign = 'center'; pg.textBaseline = 'middle'; pg.lineWidth = 3 * u; pg.strokeStyle = '#0d1b2a';

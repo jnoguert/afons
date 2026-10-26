@@ -1,6 +1,15 @@
 // node web/plan.test.js
 const assert = require('assert');
-const { planDive, makeDepthAt, legs } = require('./plan.js');
+const { planDive, makeDepthAt, legs, simplify } = require('./plan.js');
+
+// simplificació: un zig-zag suau cap al nord queda en un sol rumb; un gir de 90° es manté
+const zig = [{ x: 0, y: 0 }, { x: 2, y: 20 }, { x: -2, y: 40 }, { x: 1, y: 60 }, { x: 40, y: 60 }, { x: 80, y: 62 }];
+assert.deepStrictEqual(simplify(zig, 20), [0, 3, 5]);
+assert.deepStrictEqual(simplify(zig, 3), [0, 1, 2, 3, 5]);
+assert.deepStrictEqual(simplify(zig.slice(0, 2), 20), [0, 1]);
+// corba suau: cap gir supera 20° per si sol, però l'acumulat respecte a l'últim punt mantingut sí
+const arc = Array.from({ length: 10 }, (_, i) => ({ x: 100 * Math.sin(i * Math.PI / 18), y: 100 * Math.cos(i * Math.PI / 18) }));
+assert.ok(simplify(arc, 20).length > 2 && simplify(arc, 20).length < arc.length, 'corba: alguns girs');
 
 // rumbs: nord = 0°, est = 90°, sud-oest = 225°
 const L = legs([{ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 10 }, { x: 0, y: 0 }]);

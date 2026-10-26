@@ -84,4 +84,20 @@ function legs(wps) {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = { makeDepthAt, planDive, sampleAt, legs };
+// Simplifica la ruta per navegar: un punt intermedi només és un canvi de rumb si el gir respecte al rumb
+// que portes des de l'últim punt mantingut supera `minTurn` graus (les corbes suaus acumulen el gir).
+// Retorna els índexs dels punts mantinguts (sempre el primer i l'últim).
+function simplify(wps, minTurn) {
+  if (wps.length < 3) return wps.map((_, i) => i);
+  const brg = (a, b) => Math.atan2(b.x - a.x, b.y - a.y) * 180 / Math.PI;
+  const turn = (b1, b2) => Math.abs(((b2 - b1) % 360 + 540) % 360 - 180);
+  const keep = [0];
+  for (let i = 1; i < wps.length - 1; i++) {
+    const k = wps[keep[keep.length - 1]];
+    if (turn(brg(k, wps[i]), brg(wps[i], wps[i + 1])) > minTurn) keep.push(i);
+  }
+  keep.push(wps.length - 1);
+  return keep;
+}
+
+if (typeof module !== 'undefined') module.exports = { makeDepthAt, planDive, sampleAt, legs, simplify };
